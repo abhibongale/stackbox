@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: stackbox
+Version: 0.1.0
+Summary: Run OpenStack Ironic upstream Zuul CI jobs locally in Podman containers
+Requires-Python: >=3.10
+License-File: LICENSE
+Requires-Dist: click>=8.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: requests>=2.28
+Requires-Dist: jinja2>=3.1
+Requires-Dist: ansible-runner>=2.4
+Requires-Dist: rich>=13.0
+Requires-Dist: pydantic>=2.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Dynamic: license-file
