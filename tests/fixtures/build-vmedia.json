@@ -1,0 +1,57 @@
+{
+  "_id": 30274852,
+  "uuid": "0c85535f701140e19626493fb92077ce",
+  "job_name": "ironic-tempest-uefi-redfish-vmedia",
+  "result": "SUCCESS",
+  "held": false,
+  "execute_time": "2026-07-29T05:12:11",
+  "start_time": "2026-07-29T05:12:11",
+  "end_time": "2026-07-29T05:55:27",
+  "duration": 2596.0,
+  "voting": true,
+  "log_url": "https://9d906e117ebdecd5e5c9-bfbfd8db497e7d54c8b9e3b8f437fb98.ssl.cf2.rackcdn.com/openstack/0c85535f701140e19626493fb92077ce/",
+  "nodeset": "openstack-single-node-noble",
+  "error_detail": null,
+  "final": true,
+  "artifacts": [
+    {
+      "name": "Download all logs",
+      "url": "https://9d906e117ebdecd5e5c9-bfbfd8db497e7d54c8b9e3b8f437fb98.ssl.cf2.rackcdn.com/openstack/0c85535f701140e19626493fb92077ce/download-logs.sh",
+      "metadata": {
+        "command": "curl \"https://9d906e117ebdecd5e5c9-bfbfd8db497e7d54c8b9e3b8f437fb98.ssl.cf2.rackcdn.com/openstack/0c85535f701140e19626493fb92077ce/download-logs.sh\" | bash"
+      }
+    },
+    {
+      "name": "Zuul Manifest",
+      "url": "https://9d906e117ebdecd5e5c9-bfbfd8db497e7d54c8b9e3b8f437fb98.ssl.cf2.rackcdn.com/openstack/0c85535f701140e19626493fb92077ce/zuul-manifest.json",
+      "metadata": {
+        "type": "zuul_manifest"
+      }
+    },
+    {
+      "name": "Unit Test Report",
+      "url": "https://9d906e117ebdecd5e5c9-bfbfd8db497e7d54c8b9e3b8f437fb98.ssl.cf2.rackcdn.com/openstack/0c85535f701140e19626493fb92077ce/testr_results.html",
+      "metadata": {
+        "type": "unit_test_report"
+      }
+    }
+  ],
+  "provides": [],
+  "ref": {
+    "project": "openstack/ironic",
+    "branch": "master",
+    "change": 996687,
+    "patchset": "1",
+    "ref": "refs/changes/87/996687/1",
+    "oldrev": null,
+    "newrev": null,
+    "ref_url": "https://review.opendev.org/c/openstack/ironic/+/996687"
+  },
+  "pipeline": "gate",
+  "event_id": "49a6e6c9f93445f180366ba60be6d4aa",
+  "event_timestamp": "2026-07-29T05:10:05",
+  "queue_item_uuid": "affedcda6fa74dff9c2139076a2e51ec",
+  "buildset": {
+    "uuid": "4561311c0b0144c9996d03ae2f8d4223"
+  }
+}

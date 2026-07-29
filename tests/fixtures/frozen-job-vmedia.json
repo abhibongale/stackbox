@@ -1,0 +1,1201 @@
+{
+    "items": [],
+    "projects": [
+        {
+            "connection": "gerrit",
+            "name": "openstack/devstack",
+            "canonical_name": "opendev.org/openstack/devstack",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "github",
+            "name": "novnc/novnc",
+            "canonical_name": "github.com/novnc/novnc",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/requirements",
+            "canonical_name": "opendev.org/openstack/requirements",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/cinder",
+            "canonical_name": "opendev.org/openstack/cinder",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/glance",
+            "canonical_name": "opendev.org/openstack/glance",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/keystone",
+            "canonical_name": "opendev.org/openstack/keystone",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/neutron",
+            "canonical_name": "opendev.org/openstack/neutron",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/nova",
+            "canonical_name": "opendev.org/openstack/nova",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/placement",
+            "canonical_name": "opendev.org/openstack/placement",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/swift",
+            "canonical_name": "opendev.org/openstack/swift",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/os-test-images",
+            "canonical_name": "opendev.org/openstack/os-test-images",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/tempest",
+            "canonical_name": "opendev.org/openstack/tempest",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/diskimage-builder",
+            "canonical_name": "opendev.org/openstack/diskimage-builder",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/ironic",
+            "canonical_name": "opendev.org/openstack/ironic",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/ironic-python-agent",
+            "canonical_name": "opendev.org/openstack/ironic-python-agent",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/ironic-python-agent-builder",
+            "canonical_name": "opendev.org/openstack/ironic-python-agent-builder",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/ironic-tempest-plugin",
+            "canonical_name": "opendev.org/openstack/ironic-tempest-plugin",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        },
+        {
+            "connection": "gerrit",
+            "name": "openstack/virtualbmc",
+            "canonical_name": "opendev.org/openstack/virtualbmc",
+            "override_branch": null,
+            "override_checkout": null,
+            "default_branch": "master"
+        }
+    ],
+    "branch": "master",
+    "repo_state_keys": [],
+    "ssh_keys": [
+        "REDACTED",
+        "REDACTED"
+    ],
+    "pipeline_builds_images": false,
+    "zuul": {
+        "project": {
+            "name": "openstack/ironic",
+            "short_name": "ironic",
+            "canonical_hostname": "opendev.org",
+            "canonical_name": "opendev.org/openstack/ironic",
+            "src_dir": "src/opendev.org/openstack/ironic"
+        },
+        "change_url": null,
+        "branch": "master",
+        "build": "00000000000000000000000000000000",
+        "buildset": null,
+        "ref": null,
+        "buildset_refs": [
+            {
+                "project": {
+                    "name": "openstack/ironic",
+                    "short_name": "ironic",
+                    "canonical_hostname": "opendev.org",
+                    "canonical_name": "opendev.org/openstack/ironic",
+                    "src_dir": "src/opendev.org/openstack/ironic"
+                },
+                "change_url": null,
+                "branch": "master",
+                "src_dir": "src/opendev.org/openstack/ironic"
+            }
+        ],
+        "build_refs": [
+            {
+                "project": {
+                    "name": "openstack/ironic",
+                    "short_name": "ironic",
+                    "canonical_hostname": "opendev.org",
+                    "canonical_name": "opendev.org/openstack/ironic",
+                    "src_dir": "src/opendev.org/openstack/ironic"
+                },
+                "change_url": null,
+                "branch": "master",
+                "src_dir": "src/opendev.org/openstack/ironic"
+            }
+        ],
+        "pipeline": "gate",
+        "post_review": true,
+        "job": "ironic-tempest-uefi-redfish-vmedia",
+        "tenant": "openstack",
+        "event_id": null,
+        "jobtags": [],
+        "include_vars": [],
+        "projects": {
+            "opendev.org/openstack/requirements": {
+                "name": "openstack/requirements",
+                "short_name": "requirements",
+                "canonical_name": "opendev.org/openstack/requirements",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/requirements",
+                "required": true
+            },
+            "opendev.org/openstack/neutron": {
+                "name": "openstack/neutron",
+                "short_name": "neutron",
+                "canonical_name": "opendev.org/openstack/neutron",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/neutron",
+                "required": true
+            },
+            "opendev.org/openstack/os-test-images": {
+                "name": "openstack/os-test-images",
+                "short_name": "os-test-images",
+                "canonical_name": "opendev.org/openstack/os-test-images",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/os-test-images",
+                "required": true
+            },
+            "opendev.org/openstack/diskimage-builder": {
+                "name": "openstack/diskimage-builder",
+                "short_name": "diskimage-builder",
+                "canonical_name": "opendev.org/openstack/diskimage-builder",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/diskimage-builder",
+                "required": true
+            },
+            "opendev.org/openstack/cinder": {
+                "name": "openstack/cinder",
+                "short_name": "cinder",
+                "canonical_name": "opendev.org/openstack/cinder",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/cinder",
+                "required": true
+            },
+            "opendev.org/openstack/devstack": {
+                "name": "openstack/devstack",
+                "short_name": "devstack",
+                "canonical_name": "opendev.org/openstack/devstack",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/devstack",
+                "required": true
+            },
+            "opendev.org/openstack/ironic-python-agent": {
+                "name": "openstack/ironic-python-agent",
+                "short_name": "ironic-python-agent",
+                "canonical_name": "opendev.org/openstack/ironic-python-agent",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/ironic-python-agent",
+                "required": true
+            },
+            "opendev.org/openstack/ironic-python-agent-builder": {
+                "name": "openstack/ironic-python-agent-builder",
+                "short_name": "ironic-python-agent-builder",
+                "canonical_name": "opendev.org/openstack/ironic-python-agent-builder",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/ironic-python-agent-builder",
+                "required": true
+            },
+            "opendev.org/openstack/placement": {
+                "name": "openstack/placement",
+                "short_name": "placement",
+                "canonical_name": "opendev.org/openstack/placement",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/placement",
+                "required": true
+            },
+            "opendev.org/openstack/swift": {
+                "name": "openstack/swift",
+                "short_name": "swift",
+                "canonical_name": "opendev.org/openstack/swift",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/swift",
+                "required": true
+            },
+            "github.com/novnc/novnc": {
+                "name": "novnc/novnc",
+                "short_name": "novnc",
+                "canonical_name": "github.com/novnc/novnc",
+                "canonical_hostname": "github.com",
+                "src_dir": "src/github.com/novnc/novnc",
+                "required": true
+            },
+            "opendev.org/openstack/nova": {
+                "name": "openstack/nova",
+                "short_name": "nova",
+                "canonical_name": "opendev.org/openstack/nova",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/nova",
+                "required": true
+            },
+            "opendev.org/openstack/tempest": {
+                "name": "openstack/tempest",
+                "short_name": "tempest",
+                "canonical_name": "opendev.org/openstack/tempest",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/tempest",
+                "required": true
+            },
+            "opendev.org/openstack/keystone": {
+                "name": "openstack/keystone",
+                "short_name": "keystone",
+                "canonical_name": "opendev.org/openstack/keystone",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/keystone",
+                "required": true
+            },
+            "opendev.org/openstack/ironic": {
+                "name": "openstack/ironic",
+                "short_name": "ironic",
+                "canonical_name": "opendev.org/openstack/ironic",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/ironic",
+                "required": true
+            },
+            "opendev.org/openstack/ironic-tempest-plugin": {
+                "name": "openstack/ironic-tempest-plugin",
+                "short_name": "ironic-tempest-plugin",
+                "canonical_name": "opendev.org/openstack/ironic-tempest-plugin",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/ironic-tempest-plugin",
+                "required": true
+            },
+            "opendev.org/openstack/glance": {
+                "name": "openstack/glance",
+                "short_name": "glance",
+                "canonical_name": "opendev.org/openstack/glance",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/glance",
+                "required": true
+            },
+            "opendev.org/openstack/virtualbmc": {
+                "name": "openstack/virtualbmc",
+                "short_name": "virtualbmc",
+                "canonical_name": "opendev.org/openstack/virtualbmc",
+                "canonical_hostname": "opendev.org",
+                "src_dir": "src/opendev.org/openstack/virtualbmc",
+                "required": true
+            }
+        },
+        "items": [],
+        "child_jobs": [],
+        "voting": true,
+        "pre_timeout": null,
+        "timeout": 10800,
+        "post_timeout": 1800,
+        "_inheritance_path": [
+            "<Job base explicit: None implied: {MatchAny:{ImpliedBranchMatcher:master}} source: opendev/base-jobs/zuul.d/jobs.yaml@master#25>",
+            "<Job openstack-multinode-fips explicit: None implied: {MatchAny:{ImpliedBranchMatcher:master}} source: openstack/openstack-zuul-jobs/zuul.d/jobs.yaml@master#1789>",
+            "<Job devstack-base explicit: None implied: {MatchAny:{ImpliedBranchMatcher:master}} source: openstack/devstack/.zuul.yaml@master#378>",
+            "<Job devstack-minimal explicit: None implied: {MatchAny:{ImpliedBranchMatcher:master}} source: openstack/devstack/.zuul.yaml@master#512>",
+            "<Job devstack explicit: None implied: {MatchAny:{ImpliedBranchMatcher:master}} source: openstack/devstack/.zuul.yaml@master#555>",
+            "<Job devstack-tempest explicit: None implied: {MatchAny:{ImpliedBranchMatcher:master}} source: openstack/tempest/zuul.d/base.yaml@master#1>",
+            "<Job ironic-base explicit: None implied: {MatchAny:{ImpliedBranchMatcher:master}} source: openstack/ironic/zuul.d/ironic-jobs.yaml@master#53>",
+            "<Job ironic-tempest-uefi-redfish-vmedia explicit: None implied: {MatchAny:{ImpliedBranchMatcher:master}} source: openstack/ironic/zuul.d/ironic-jobs.yaml@master#451>",
+            "<Job ironic-tempest-uefi-redfish-vmedia explicit: None implied: None source: openstack/ironic/zuul.d/project.yaml@master#2>"
+        ]
+    },
+    "job": "ironic-tempest-uefi-redfish-vmedia",
+    "pre_timeout": null,
+    "timeout": 10800,
+    "post_timeout": 1800,
+    "override_branch": null,
+    "override_checkout": null,
+    "ansible_version": "11",
+    "ansible_split_streams": null,
+    "workspace_scheme": "golang",
+    "workspace_checkout": true,
+    "playbooks": [
+        {
+            "connection": "gerrit",
+            "project": "openstack/tempest",
+            "branch": "master",
+            "trusted": false,
+            "roles": [
+                {
+                    "target_name": "tempest",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/tempest",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/tempest"
+                },
+                {
+                    "target_name": "devstack",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/devstack",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/devstack"
+                },
+                {
+                    "target_name": "openstack-zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/openstack-zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/openstack-zuul-jobs"
+                },
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {},
+            "semaphores": [],
+            "path": "playbooks/devstack-tempest.yaml",
+            "cleanup": false,
+            "nesting_level": 5,
+            "preserve_home_paths": []
+        }
+    ],
+    "pre_playbooks": [
+        {
+            "connection": "gerrit",
+            "project": "opendev/base-jobs",
+            "branch": "master",
+            "trusted": true,
+            "roles": [
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {
+                "opendev_cloud_ovh_bhs": "REDACTED",
+                "opendev_cloud_ovh_gra": "REDACTED",
+                "opendev_cloud_rax_dfw": "REDACTED",
+                "opendev_cloud_rax_iad": "REDACTED",
+                "opendev_cloud_rax_ord": "REDACTED",
+                "opendev_cloud_vexxhost_ymq1": "REDACTED"
+            },
+            "semaphores": [],
+            "path": "playbooks/base/pre.yaml",
+            "cleanup": false,
+            "nesting_level": 0,
+            "preserve_home_paths": []
+        },
+        {
+            "connection": "gerrit",
+            "project": "openstack/openstack-zuul-jobs",
+            "branch": "master",
+            "trusted": false,
+            "roles": [
+                {
+                    "target_name": "openstack-zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/openstack-zuul-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/openstack-zuul-jobs"
+                },
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {},
+            "semaphores": [],
+            "path": "playbooks/fips/enable-fips.yaml",
+            "cleanup": false,
+            "nesting_level": 1,
+            "preserve_home_paths": []
+        },
+        {
+            "connection": "gerrit",
+            "project": "openstack/openstack-zuul-jobs",
+            "branch": "master",
+            "trusted": false,
+            "roles": [
+                {
+                    "target_name": "openstack-zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/openstack-zuul-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/openstack-zuul-jobs"
+                },
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {},
+            "semaphores": [],
+            "path": "playbooks/multinode/enable-multinode.yaml",
+            "cleanup": false,
+            "nesting_level": 1,
+            "preserve_home_paths": []
+        },
+        {
+            "connection": "gerrit",
+            "project": "openstack/devstack",
+            "branch": "master",
+            "trusted": false,
+            "roles": [
+                {
+                    "target_name": "devstack",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/devstack",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/devstack"
+                },
+                {
+                    "target_name": "openstack-zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/openstack-zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/openstack-zuul-jobs"
+                },
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {},
+            "semaphores": [],
+            "path": "playbooks/pre.yaml",
+            "cleanup": false,
+            "nesting_level": 2,
+            "preserve_home_paths": []
+        }
+    ],
+    "post_playbooks": [
+        {
+            "connection": "gerrit",
+            "project": "openstack/ironic",
+            "branch": "master",
+            "trusted": false,
+            "roles": [
+                {
+                    "target_name": "ironic",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/ironic",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/ironic"
+                },
+                {
+                    "target_name": "tempest",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/tempest",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/tempest"
+                },
+                {
+                    "target_name": "devstack",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/devstack",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/devstack"
+                },
+                {
+                    "target_name": "openstack-zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/openstack-zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/openstack-zuul-jobs"
+                },
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {},
+            "semaphores": [],
+            "path": "playbooks/ci-workarounds/get_extra_logging.yaml",
+            "cleanup": false,
+            "nesting_level": 6,
+            "preserve_home_paths": []
+        },
+        {
+            "connection": "gerrit",
+            "project": "openstack/tempest",
+            "branch": "master",
+            "trusted": false,
+            "roles": [
+                {
+                    "target_name": "tempest",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/tempest",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/tempest"
+                },
+                {
+                    "target_name": "devstack",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/devstack",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/devstack"
+                },
+                {
+                    "target_name": "openstack-zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/openstack-zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/openstack-zuul-jobs"
+                },
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {},
+            "semaphores": [],
+            "path": "playbooks/post-tempest.yaml",
+            "cleanup": false,
+            "nesting_level": 5,
+            "preserve_home_paths": []
+        },
+        {
+            "connection": "gerrit",
+            "project": "openstack/devstack",
+            "branch": "master",
+            "trusted": false,
+            "roles": [
+                {
+                    "target_name": "devstack",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/devstack",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/devstack"
+                },
+                {
+                    "target_name": "openstack-zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/openstack/openstack-zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "openstack/openstack-zuul-jobs"
+                },
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {},
+            "semaphores": [],
+            "path": "playbooks/post.yaml",
+            "cleanup": false,
+            "nesting_level": 2,
+            "preserve_home_paths": []
+        },
+        {
+            "connection": "gerrit",
+            "project": "opendev/base-jobs",
+            "branch": "master",
+            "trusted": true,
+            "roles": [
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {
+                "opendev_cloud_ovh_bhs": "REDACTED",
+                "opendev_cloud_ovh_gra": "REDACTED",
+                "opendev_cloud_rax_dfw": "REDACTED",
+                "opendev_cloud_rax_iad": "REDACTED",
+                "opendev_cloud_rax_ord": "REDACTED",
+                "opendev_cloud_vexxhost_ymq1": "REDACTED"
+            },
+            "semaphores": [],
+            "path": "playbooks/base/post.yaml",
+            "cleanup": false,
+            "nesting_level": 0,
+            "preserve_home_paths": []
+        },
+        {
+            "connection": "gerrit",
+            "project": "opendev/base-jobs",
+            "branch": "master",
+            "trusted": true,
+            "roles": [
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {
+                "opendev_cloud_ovh_bhs": "REDACTED",
+                "opendev_cloud_ovh_gra": "REDACTED",
+                "opendev_cloud_rax_dfw": "REDACTED",
+                "opendev_cloud_rax_iad": "REDACTED",
+                "opendev_cloud_rax_ord": "REDACTED",
+                "opendev_cloud_vexxhost_ymq1": "REDACTED"
+            },
+            "semaphores": [],
+            "path": "playbooks/base/cleanup.yaml",
+            "cleanup": true,
+            "nesting_level": 0,
+            "preserve_home_paths": []
+        },
+        {
+            "connection": "gerrit",
+            "project": "opendev/base-jobs",
+            "branch": "master",
+            "trusted": true,
+            "roles": [
+                {
+                    "target_name": "base-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/opendev/base-jobs",
+                    "implicit": true,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "opendev/base-jobs"
+                },
+                {
+                    "target_name": "zuul-jobs",
+                    "type": "zuul",
+                    "project_canonical_name": "opendev.org/zuul/zuul-jobs",
+                    "implicit": false,
+                    "project_default_branch": "master",
+                    "connection": "gerrit",
+                    "project": "zuul/zuul-jobs"
+                }
+            ],
+            "secrets": {
+                "opendev_cloud_ovh_bhs": "REDACTED",
+                "opendev_cloud_ovh_gra": "REDACTED",
+                "opendev_cloud_rax_dfw": "REDACTED",
+                "opendev_cloud_rax_iad": "REDACTED",
+                "opendev_cloud_rax_ord": "REDACTED",
+                "opendev_cloud_vexxhost_ymq1": "REDACTED"
+            },
+            "semaphores": [],
+            "path": "playbooks/base/post-logs.yaml",
+            "cleanup": false,
+            "nesting_level": 0,
+            "preserve_home_paths": []
+        }
+    ],
+    "cleanup_playbooks": [],
+    "nodeset": {
+        "name": "openstack-single-node-noble",
+        "nodes": [
+            {
+                "id": null,
+                "state": "unknown",
+                "hold_job": null,
+                "comment": null,
+                "user_data": null,
+                "tenant_name": null,
+                "requestor": null,
+                "label": "ubuntu-noble",
+                "name": "controller",
+                "aliases": []
+            }
+        ],
+        "groups": [
+            {
+                "name": "tempest",
+                "nodes": [
+                    "controller"
+                ]
+            }
+        ],
+        "alternatives": []
+    },
+    "vars": {
+        "configure_swap_size": 8192,
+        "devstack_local_conf": {
+            "post-config": {
+                "$NEUTRON_CONF": {
+                    "DEFAULT": {
+                        "global_physnet_mtu": "{{ external_bridge_mtu }}"
+                    }
+                }
+            },
+            "test-config": {
+                "$TEMPEST_CONFIG": {
+                    "compute": {
+                        "min_compute_nodes": "{{ groups['compute'] | default(['controller']) | length }}"
+                    },
+                    "service-clients": {
+                        "http_timeout": 90
+                    }
+                }
+            }
+        },
+        "test_results_stage_name": "test_results",
+        "extensions_to_txt": {
+            "localrc": true,
+            "stackenv": true,
+            "auto": true,
+            "conf": true,
+            "log": true,
+            "yaml": true,
+            "yml": true
+        },
+        "tox_envlist": "all",
+        "tempest_test_timeout": 2600,
+        "tempest_concurrency": 1,
+        "devstack_plugins": {
+            "ironic": "https://opendev.org/openstack/ironic"
+        },
+        "tempest_plugins": [
+            "ironic-tempest-plugin"
+        ],
+        "zuul_copy_output": {
+            "{{ devstack_conf_dir }}/local.conf": "logs",
+            "{{ devstack_conf_dir }}/localrc": "logs",
+            "{{ devstack_conf_dir }}/.localrc.auto": "logs",
+            "{{ devstack_conf_dir }}/.stackenv": "logs",
+            "{{ devstack_log_dir }}/dstat-csv.log": "logs",
+            "{{ devstack_log_dir }}/atop": "logs",
+            "{{ devstack_log_dir }}/devstacklog.txt": "logs",
+            "{{ devstack_log_dir }}/devstacklog.txt.summary": "logs",
+            "{{ devstack_log_dir }}/tcpdump.pcap": "logs",
+            "{{ devstack_log_dir }}/worlddump-latest.txt": "logs",
+            "{{ devstack_log_dir }}/qemu.coredump": "logs",
+            "{{ devstack_full_log}}": "logs",
+            "{{ stage_dir }}/verify_tempest_conf.log": "logs",
+            "{{ stage_dir }}/performance.json": "logs",
+            "{{ stage_dir }}/apache": "logs",
+            "{{ stage_dir }}/apache_config": "logs",
+            "{{ stage_dir }}/etc": "logs",
+            "/var/log/rabbitmq": "logs",
+            "/var/log/postgresql": "logs",
+            "/var/log/mysql": "logs",
+            "/var/log/libvirt": "logs",
+            "/etc/libvirt": "logs",
+            "/etc/lvm": "logs",
+            "/etc/sudoers": "logs",
+            "/etc/sudoers.d": "logs",
+            "{{ stage_dir }}/iptables.txt": "logs",
+            "{{ stage_dir }}/df.txt": "logs",
+            "{{ stage_dir }}/mount.txt": "logs",
+            "{{ stage_dir }}/pip2-freeze.txt": "logs",
+            "{{ stage_dir }}/pip3-freeze.txt": "logs",
+            "{{ stage_dir }}/dpkg-l.txt": "logs",
+            "{{ stage_dir }}/rpm-qa.txt": "logs",
+            "{{ stage_dir }}/core": "logs",
+            "{{ stage_dir }}/listen53.txt": "logs",
+            "{{ stage_dir }}/services.txt": "logs",
+            "{{ stage_dir }}/deprecations.log": "logs",
+            "{{ stage_dir }}/audit.log": "logs",
+            "/etc/ceph": "logs",
+            "/var/log/ceph": "logs",
+            "/var/log/glusterfs": "logs",
+            "/etc/glusterfs/glusterd.vol": "logs",
+            "/etc/resolv.conf": "logs",
+            "/var/log/unbound.log": "logs",
+            "/var/log/openvswitch": "logs",
+            "/var/log/ovn": "logs",
+            "{{ devstack_base_dir }}/tempest/etc/tempest.conf": "logs",
+            "{{ devstack_base_dir }}/tempest/etc/accounts.yaml": "logs",
+            "{{ devstack_base_dir }}/tempest/tempest.log": "logs",
+            "{{ stage_dir }}/{{ test_results_stage_name }}.subunit": "logs",
+            "{{ stage_dir }}/{{ test_results_stage_name }}.html": "logs",
+            "{{ stage_dir }}/stackviz": "logs",
+            "{{ devstack_base_dir }}/ironic-bm-logs": "logs",
+            "{{ devstack_base_dir }}/data/networking-generic-switch/netmiko_session.log": "logs"
+        },
+        "tempest_test_regex": "test_baremetal_server_ops_wholedisk_image",
+        "devstack_localrc": {
+            "DATABASE_PASSWORD": "secretdatabase",
+            "RABBIT_PASSWORD": "secretrabbit",
+            "ADMIN_PASSWORD": "secretadmin",
+            "SERVICE_PASSWORD": "secretservice",
+            "NETWORK_GATEWAY": "10.1.0.1",
+            "FIXED_RANGE": "10.1.0.0/20",
+            "IPV4_ADDRS_SAFE_TO_USE": "10.1.0.0/20",
+            "FLOATING_RANGE": "172.24.5.0/24",
+            "PUBLIC_NETWORK_GATEWAY": "172.24.5.1",
+            "LOGFILE": "/opt/stack/logs/devstacklog.txt",
+            "LOG_COLOR": false,
+            "VERBOSE": true,
+            "VERBOSE_NO_TIMESTAMP": true,
+            "ERROR_ON_CLONE": true,
+            "LIBVIRT_TYPE": "{{ devstack_libvirt_type | default(\"qemu\") }}",
+            "SERVICE_HOST": "{{ hostvars['controller']['nodepool']['private_ipv4'] }}",
+            "HOST_IP": "{{ hostvars['controller']['nodepool']['private_ipv4'] }}",
+            "PUBLIC_BRIDGE_MTU": "{{ external_bridge_mtu }}",
+            "SWIFT_REPLICAS": 1,
+            "SWIFT_START_ALL_SERVICES": false,
+            "SWIFT_HASH": 1234123412341234,
+            "DEBUG_LIBVIRT_COREDUMPS": true,
+            "NOVA_VNC_ENABLED": true,
+            "OVN_DBS_LOG_LEVEL": "dbg",
+            "ENABLE_SYSCTL_MEM_TUNING": true,
+            "ENABLE_SYSCTL_NET_TUNING": true,
+            "NOVA_LIBVIRT_TB_CACHE_SIZE": 128,
+            "ENABLE_ZSWAP": true,
+            "IMAGE_URLS": "http://download.cirros-cloud.net/0.6.2/cirros-0.6.2-x86_64-disk.img, http://download.cirros-cloud.net/0.6.1/cirros-0.6.1-x86_64-disk.img",
+            "DEFAULT_INSTANCE_TYPE": "baremetal",
+            "FORCE_CONFIG_DRIVE": true,
+            "INSTALL_TEMPEST": false,
+            "VIRT_DRIVER": "ironic",
+            "BUILD_TIMEOUT": 2000,
+            "IRONIC_BAREMETAL_BASIC_OPS": true,
+            "IRONIC_BUILD_DEPLOY_RAMDISK": false,
+            "IRONIC_LOG_STEPS_TO_SYSLOG": true,
+            "IRONIC_TEMPEST_BUILD_TIMEOUT": 2000,
+            "IRONIC_TEMPEST_WHOLE_DISK_IMAGE": false,
+            "IRONIC_VM_COUNT": 2,
+            "IRONIC_VM_EPHEMERAL_DISK": 1,
+            "IRONIC_VM_SPECS_RAM": 2750,
+            "IRONIC_VM_LOG_DIR": "{{ devstack_base_dir }}/ironic-bm-logs",
+            "IRONIC_VM_SPECS_DISK": 4,
+            "IRONIC_VM_SPECS_CPU": 2,
+            "Q_AGENT": "openvswitch",
+            "Q_ML2_TENANT_NETWORK_TYPE": "vxlan",
+            "Q_ML2_PLUGIN_MECHANISM_DRIVERS": "openvswitch",
+            "SERVICE_TIMEOUT": 90,
+            "GLANCE_LIMIT_IMAGE_SIZE_TOTAL": 5000,
+            "Q_USE_SECGROUP": false,
+            "API_WORKERS": 1,
+            "CIRROS_VERSION": "0.6.1",
+            "IRONIC_DEPLOY_DRIVER": "redfish",
+            "IRONIC_ENABLED_HARDWARE_TYPES": "redfish",
+            "IRONIC_ENABLED_POWER_INTERFACES": "redfish",
+            "IRONIC_ENABLED_MANAGEMENT_INTERFACES": "redfish",
+            "IRONIC_AUTOMATED_CLEAN_ENABLED": false,
+            "IRONIC_ENABLED_BOOT_INTERFACES": "redfish-virtual-media",
+            "SWIFT_ENABLE_TEMPURLS": true,
+            "SWIFT_TEMPURL_KEY": "secretkey",
+            "IRONIC_CALLBACK_TIMEOUT": 800,
+            "IRONIC_GRUB2_SHIM_FILE": "https://{{ zuul_site_mirror_fqdn }}/centos-stream/9-stream/BaseOS/x86_64/os/EFI/BOOT/BOOTX64.EFI",
+            "IRONIC_GRUB2_FILE": "https://{{ zuul_site_mirror_fqdn }}/centos-stream/9-stream/BaseOS/x86_64/os/EFI/BOOT/grubx64.efi",
+            "IRONIC_GRUB2_CONFIG_PATH": "EFI/BOOT/grub.cfg",
+            "IRONIC_REDFISH_EMULATOR_FEATURE_SET": "vmedia"
+        },
+        "devstack_services": {
+            "base": false,
+            "etcd3": true,
+            "memory_tracker": true,
+            "file_tracker": true,
+            "mysql": true,
+            "rabbit": true,
+            "tls-proxy": true,
+            "key": true,
+            "g-api": true,
+            "n-api": true,
+            "n-api-meta": true,
+            "n-cond": true,
+            "n-cpu": true,
+            "n-novnc": true,
+            "n-sch": true,
+            "placement-api": true,
+            "ovs-vswitchd": true,
+            "ovsdb-server": true,
+            "horizon": false,
+            "tempest": true,
+            "dstat": false,
+            "q-agt": true,
+            "q-dhcp": true,
+            "q-l3": true,
+            "q-meta": true,
+            "q-svc": true,
+            "ovn-controller": false,
+            "ovn-northd": false,
+            "q-ovn-agent": false,
+            "c-api": false,
+            "c-bak": false,
+            "c-sch": false,
+            "c-vol": false,
+            "cinder": false,
+            "openstack-cli-server": true,
+            "atop": true,
+            "s-account": true,
+            "s-container": true,
+            "s-object": true,
+            "s-proxy": true
+        }
+    },
+    "extra_vars": {},
+    "host_vars": {},
+    "group_vars": {
+        "subnode": {
+            "devstack_services": {
+                "base": false,
+                "openstack-cli-server": true,
+                "dstat": false,
+                "memory_tracker": true,
+                "file_tracker": true,
+                "tls-proxy": true,
+                "n-cpu": true,
+                "placement-client": true,
+                "ovn-controller": true,
+                "ovs-vswitchd": true,
+                "ovsdb-server": true,
+                "q-ovn-agent": true,
+                "c-bak": true,
+                "c-vol": true,
+                "horizon": false,
+                "tempest": false
+            },
+            "devstack_localrc": {
+                "DATABASE_PASSWORD": "secretdatabase",
+                "RABBIT_PASSWORD": "secretrabbit",
+                "ADMIN_PASSWORD": "secretadmin",
+                "SERVICE_PASSWORD": "secretservice",
+                "NETWORK_GATEWAY": "10.1.0.1",
+                "FIXED_RANGE": "10.1.0.0/20",
+                "IPV4_ADDRS_SAFE_TO_USE": "10.1.0.0/20",
+                "FLOATING_RANGE": "172.24.5.0/24",
+                "PUBLIC_NETWORK_GATEWAY": "172.24.5.1",
+                "LOGFILE": "/opt/stack/logs/devstacklog.txt",
+                "LOG_COLOR": false,
+                "VERBOSE": true,
+                "VERBOSE_NO_TIMESTAMP": true,
+                "ERROR_ON_CLONE": true,
+                "LIBVIRT_TYPE": "qemu",
+                "HOST_IP": "{{ hostvars[inventory_hostname]['nodepool']['private_ipv4'] }}",
+                "SERVICE_HOST": "{{ hostvars['controller']['nodepool']['private_ipv4'] }}",
+                "PUBLIC_BRIDGE_MTU": "{{ external_bridge_mtu }}",
+                "DATABASE_TYPE": "mysql",
+                "RABBIT_HOST": "{{ hostvars['controller']['nodepool']['private_ipv4'] }}",
+                "DATABASE_HOST": "{{ hostvars['controller']['nodepool']['private_ipv4'] }}",
+                "GLANCE_HOSTPORT": "{{ hostvars['controller']['nodepool']['private_ipv4'] }}:9292",
+                "Q_HOST": "{{ hostvars['controller']['nodepool']['private_ipv4'] }}",
+                "NOVA_VNC_ENABLED": true,
+                "ENABLE_CHASSIS_AS_GW": false,
+                "ENABLE_SYSCTL_MEM_TUNING": true,
+                "ENABLE_SYSCTL_NET_TUNING": true,
+                "ENABLE_ZSWAP": true,
+                "NOVA_LIBVIRT_TB_CACHE_SIZE": 128
+            }
+        }
+    },
+    "secret_vars": null,
+    "failure_output": [
+        "\\{\\d+\\} (.*?) \\[[\\d\\.]+s\\] \\.\\.\\. FAILED"
+    ]
+}

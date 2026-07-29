@@ -16,3 +16,14 @@ class ZuulJobDefinition(BaseModel):
     playbooks: list[dict] = []
     nodeset: dict | None = None
     voting: bool = True
+
+
+class BuildInfo(BaseModel):
+    uuid: str
+    job_name: str
+    project: str
+    branch: str
+    ref: str
+    log_url: str
+    result: str
+    pipeline: str = ""

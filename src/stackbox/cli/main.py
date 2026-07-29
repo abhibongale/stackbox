@@ -1,6 +1,39 @@
 import click
+from rich.console import Console
+from rich.table import Table
 
+from stackbox.config import REPO_CACHE_DIR
 from stackbox.constants import DEFAULT_RELEASE
+
+
+def _parse_local_repos(local_repo: tuple[str, ...]) -> dict[str, str]:
+    repos = {}
+    for entry in local_repo:
+        if "=" not in entry:
+            raise click.BadParameter(
+                f"Invalid --local-repo format: '{entry}'. Use service=path."
+            )
+        service, path = entry.split("=", 1)
+        repos[service.strip()] = path.strip()
+    return repos
+
+
+def _resolve_job(job_name, offline, project="openstack/ironic", branch="master", pipeline="gate"):
+    if offline:
+        from stackbox.zuul.parser import OfflineJobParser
+        from stackbox.zuul.repo_cache import RepoCache
+
+        cache = RepoCache(REPO_CACHE_DIR)
+        cache.ensure_repos(branch=branch)
+        parser = OfflineJobParser(cache)
+        return parser.resolve(job_name, project=project, branch=branch, pipeline=pipeline)
+    else:
+        from stackbox.zuul.api import ZuulClient
+        from stackbox.zuul.freeze import FreezeJobResolver
+
+        client = ZuulClient()
+        resolver = FreezeJobResolver(client)
+        return resolver.resolve(job_name, project=project, branch=branch, pipeline=pipeline)
 
 
 @click.group()
@@ -31,7 +64,25 @@ def init(release):
 @click.option("--release", default=DEFAULT_RELEASE, help="Kolla image release tag")
 def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep, release):
     """Run a Zuul CI job locally."""
-    click.echo(f"stackbox run {job_name} — not yet implemented")
+    console = Console()
+    local_repos = _parse_local_repos(local_repo)
+
+    with console.status(f"Resolving job [bold]{job_name}[/bold]..."):
+        config = _resolve_job(job_name, offline)
+
+    config.local_repos = local_repos
+    config.port_offset = port_offset
+
+    if dry_run:
+        console.print_json(config.model_dump_json(indent=2))
+        return
+
+    console.print(f"[green]Resolved job:[/green] {config.job_name}")
+    console.print(f"  Boot interface: {config.boot_interface}")
+    console.print(f"  BMC driver: {config.bmc_driver}")
+    console.print(f"  VM count: {config.vm_specs.count}")
+    console.print(f"  Tempest regex: {config.tempest_test_regex}")
+    console.print("\n[yellow]Container orchestration not yet implemented (Phase 4)[/yellow]")
 
 
 @cli.command()
@@ -42,7 +93,51 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
 @click.option("--keep", is_flag=True, help="Keep containers running after tests")
 def reproduce(build_url, local_repo, port_offset, dry_run, keep):
     """Reproduce a CI job from a Zuul build URL."""
-    click.echo(f"stackbox reproduce {build_url} — not yet implemented")
+    from stackbox.reproducer.build_fetcher import BuildFetcher
+    from stackbox.reproducer.inventory_parser import InventoryParser
+    from stackbox.reproducer.variable_extractor import VariableExtractor
+    from stackbox.zuul.api import ZuulClient
+
+    console = Console()
+    local_repos = _parse_local_repos(local_repo)
+
+    with console.status("Fetching build info..."):
+        client = ZuulClient()
+        fetcher = BuildFetcher(client)
+        build_info = fetcher.fetch(build_url)
+
+    console.print(f"[green]Build:[/green] {build_info.job_name} ({build_info.result})")
+    console.print(f"  Project: {build_info.project}")
+    console.print(f"  Branch: {build_info.branch}")
+
+    with console.status("Fetching inventory..."):
+        inv_parser = InventoryParser()
+        inventory = inv_parser.parse(build_info.log_url)
+        hostvars = inv_parser.extract_hostvars(inventory)
+
+    with console.status("Extracting variables..."):
+        extractor = VariableExtractor()
+        config = extractor.extract(
+            hostvars,
+            job_name=build_info.job_name,
+            project=build_info.project,
+            branch=build_info.branch,
+            pipeline=build_info.pipeline,
+        )
+
+    config.local_repos = local_repos
+    config.port_offset = port_offset
+
+    if dry_run:
+        console.print_json(config.model_dump_json(indent=2))
+        return
+
+    console.print(f"\n[green]Resolved config:[/green]")
+    console.print(f"  Boot interface: {config.boot_interface}")
+    console.print(f"  BMC driver: {config.bmc_driver}")
+    console.print(f"  VM count: {config.vm_specs.count}")
+    console.print(f"  Tempest regex: {config.tempest_test_regex}")
+    console.print("\n[yellow]Container orchestration not yet implemented (Phase 4)[/yellow]")
 
 
 @cli.command("list")
@@ -50,7 +145,37 @@ def reproduce(build_url, local_repo, port_offset, dry_run, keep):
 @click.option("--pipeline", default=None, help="Filter by pipeline (e.g. gate, check)")
 def list_jobs(project, pipeline):
     """List available Zuul jobs for a project."""
-    click.echo(f"stackbox list --project {project} — not yet implemented")
+    from stackbox.zuul.api import ZuulClient
+
+    console = Console()
+
+    with console.status(f"Fetching jobs for [bold]{project}[/bold]..."):
+        client = ZuulClient()
+        jobs = client.list_jobs(project, pipeline=pipeline)
+
+    if not jobs:
+        console.print(f"No jobs found for {project}")
+        return
+
+    table = Table(title=f"Zuul Jobs — {project}")
+    table.add_column("Job Name", style="cyan")
+    table.add_column("Pipeline")
+    table.add_column("Voting")
+
+    seen = set()
+    for job in jobs:
+        key = (job["name"], job["pipeline"])
+        if key in seen:
+            continue
+        seen.add(key)
+        voting_style = "green" if job["voting"] else "yellow"
+        table.add_row(
+            job["name"],
+            job["pipeline"],
+            f"[{voting_style}]{'yes' if job['voting'] else 'no'}[/{voting_style}]",
+        )
+
+    console.print(table)
 
 
 @cli.command()
@@ -81,7 +206,13 @@ def exec_cmd(service, cmd):
 @click.option("--offline", is_flag=True, help="Resolve from local zuul.d/ files")
 def config(job_name, port_offset, offline):
     """Generate service configs without deploying."""
-    click.echo(f"stackbox config {job_name} — not yet implemented")
+    console = Console()
+
+    with console.status(f"Resolving job [bold]{job_name}[/bold]..."):
+        resolved = _resolve_job(job_name, offline)
+
+    resolved.port_offset = port_offset
+    console.print_json(resolved.model_dump_json(indent=2))
 
 
 @cli.command()

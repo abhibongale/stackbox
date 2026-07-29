@@ -1,0 +1,60 @@
+all:
+  vars:
+    configure_swap_size: 8192
+    devstack_local_conf:
+      post-config:
+        $NEUTRON_CONF:
+          DEFAULT:
+            global_physnet_mtu: 1400
+    tox_envlist: all
+    tempest_test_regex: test_baremetal_server_ops_wholedisk_image
+    devstack_localrc:
+      IRONIC_ENABLED_HARDWARE_TYPES: redfish
+      IRONIC_ENABLED_BOOT_INTERFACES: redfish-virtual-media
+      IRONIC_ENABLED_MANAGEMENT_INTERFACES: redfish
+      IRONIC_ENABLED_POWER_INTERFACES: redfish
+      IRONIC_VM_COUNT: 2
+      IRONIC_VM_SPECS_RAM: 3072
+      IRONIC_VM_SPECS_CPU: 1
+      IRONIC_VM_SPECS_DISK: 10
+      IRONIC_DEPLOY_DRIVER: redfish
+      IRONIC_AUTOMATED_CLEAN_ENABLED: false
+      VIRT_DRIVER: ironic
+      FORCE_CONFIG_DRIVE: true
+      SWIFT_ENABLE_TEMPURLS: true
+      SWIFT_TEMPURL_KEY: secretkey
+      BUILD_TIMEOUT: 2000
+    devstack_services:
+      s-proxy: true
+      s-object: true
+      s-container: true
+      s-account: true
+      cinder: false
+    zuul_copy_output:
+      /var/log/ironic: logs
+    tempest_concurrency: 1
+  hosts:
+    controller:
+      ansible_host: 198.51.100.10
+      ansible_port: 22
+      ansible_user: zuul
+      ansible_connection: ssh
+      ansible_python_interpreter: /usr/bin/python3
+      nodepool:
+        provider: rax-dfw
+        cloud: rax
+        region: DFW
+        label: ubuntu-noble
+      zuul:
+        job: ironic-tempest-uefi-redfish-vmedia
+        branch: master
+        pipeline: gate
+        project:
+          canonical_name: opendev.org/openstack/ironic
+          name: openstack/ironic
+      devstack_localrc:
+        LOGFILE: /opt/stack/logs/devstacklog.txt
+        LOG_COLOR: false
+        IRONIC_GRUB2_SHIM_FILE: "https://{{ zuul_site_mirror_fqdn }}/centos-stream/9/grub2-shim.efi"
+      mirror_fqdn: mirror.regionone.rax-dfw.opendev.org
+      zuul_site_mirror_fqdn: mirror.regionone.rax-dfw.opendev.org

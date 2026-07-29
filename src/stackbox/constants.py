@@ -66,3 +66,13 @@ METAL3_IMAGES = {
     "sushy-tools": "sushy-tools",
     "vbmc": "vbmc",
 }
+
+OPENDEV_GIT_BASE = "https://opendev.org"
+
+REQUIRED_REPOS = {
+    "zuul/zuul-jobs": f"{OPENDEV_GIT_BASE}/zuul/zuul-jobs.git",
+    "openstack/openstack-zuul-jobs": f"{OPENDEV_GIT_BASE}/openstack/openstack-zuul-jobs.git",
+    "openstack/devstack": f"{OPENDEV_GIT_BASE}/openstack/devstack.git",
+    "openstack/devstack-plugin-ironic": f"{OPENDEV_GIT_BASE}/openstack/devstack-plugin-ironic.git",
+    "openstack/ironic": f"{OPENDEV_GIT_BASE}/openstack/ironic.git",
+}
