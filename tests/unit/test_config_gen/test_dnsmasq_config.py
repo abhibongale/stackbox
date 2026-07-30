@@ -5,20 +5,20 @@ from stackbox.models.job_config import ResolvedJobConfig
 
 class TestDnsmasqHelpers:
     def test_parse_dhcp_range_default(self):
-        start, end, prefix = _parse_dhcp_range("10.0.0.0/29")
-        assert prefix == 29
+        start, end, netmask = _parse_dhcp_range("10.0.0.0/29")
+        assert netmask == "255.255.255.248"
 
     def test_parse_dhcp_range_larger_network(self):
-        start, end, prefix = _parse_dhcp_range("10.1.0.0/20")
-        assert prefix == 20
+        start, end, netmask = _parse_dhcp_range("10.1.0.0/20")
+        assert netmask == "255.255.240.0"
         assert start.startswith("10.1.")
         assert end.startswith("10.1.")
 
     def test_parse_dhcp_range_invalid_falls_back(self):
-        start, end, prefix = _parse_dhcp_range("not-a-cidr")
+        start, end, netmask = _parse_dhcp_range("not-a-cidr")
         assert start == "10.0.0.50"
         assert end == "10.0.0.150"
-        assert prefix == 29
+        assert netmask == "255.255.255.248"
 
     def test_gateway_from_network(self):
         gw = _gateway("10.1.0.0/20")
@@ -43,7 +43,7 @@ class TestDnsmasqConfigGenerator:
         gen = DnsmasqConfigGenerator(job, port_manager)
         content = gen.generate()["dnsmasq.conf"]
         assert "10.1." in content
-        assert ",20" in content
+        assert "255.255.240.0" in content
 
     def test_uses_network_gateway_from_localrc(self, port_manager):
         job = ResolvedJobConfig(

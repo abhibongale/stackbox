@@ -52,7 +52,7 @@ class NeutronConfigGenerator(ServiceConfigGenerator):
 
         if "openvswitch" in mechanism:
             ml2_config["ovs"] = {
-                "bridge_mappings": "physnet1:brbm",
+                "bridge_mappings": lr.get("Q_ML2_OVS_BRIDGE_MAPPINGS", "physnet1:brbm"),
             }
 
         ml2_config["securitygroup"] = {

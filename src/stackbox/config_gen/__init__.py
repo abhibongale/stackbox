@@ -8,8 +8,10 @@ from stackbox.config_gen.dnsmasq_conf import DnsmasqConfigGenerator
 from stackbox.config_gen.glance import GlanceConfigGenerator
 from stackbox.config_gen.ironic import IronicConfigGenerator
 from stackbox.config_gen.keystone import KeystoneConfigGenerator
+from stackbox.config_gen.libvirt_config import LibvirtConfigGenerator
 from stackbox.config_gen.mariadb import MariaDBConfigGenerator
 from stackbox.config_gen.neutron import NeutronConfigGenerator
+from stackbox.config_gen.neutron_agents import NeutronAgentConfigGenerator
 from stackbox.config_gen.nova import NovaConfigGenerator
 from stackbox.config_gen.placement import PlacementConfigGenerator
 from stackbox.config_gen.ports import PortManager
@@ -24,10 +26,12 @@ log = logging.getLogger(__name__)
 
 GENERATORS = {
     "keystone": KeystoneConfigGenerator,
+    "libvirt": LibvirtConfigGenerator,
     "ironic": IronicConfigGenerator,
     "nova": NovaConfigGenerator,
     "glance": GlanceConfigGenerator,
     "neutron": NeutronConfigGenerator,
+    "neutron_agents": NeutronAgentConfigGenerator,
     "placement": PlacementConfigGenerator,
     "mariadb": MariaDBConfigGenerator,
     "rabbitmq": RabbitMQConfigGenerator,

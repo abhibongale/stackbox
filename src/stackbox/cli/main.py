@@ -1,3 +1,5 @@
+import uuid as _uuid
+
 import click
 from rich.console import Console
 from rich.table import Table
@@ -46,7 +48,39 @@ def cli():
 @click.option("--release", default=DEFAULT_RELEASE, help="Kolla image release tag")
 def init(release):
     """Validate host prerequisites and pull base images."""
-    click.echo("stackbox init — not yet implemented")
+    from stackbox.config_gen.ports import PortManager
+    from stackbox.containers import preflight
+    from stackbox.containers.images import ImageManager
+    from stackbox.containers.podman import PodmanBackend
+    from stackbox.models.job_config import ResolvedJobConfig
+
+    console = Console()
+
+    with console.status("Running preflight checks..."):
+        job = ResolvedJobConfig(job_name="preflight")
+        pm = PortManager()
+        preflight.check_all(job, pm)
+
+    console.print("[green]Preflight checks passed[/green]")
+
+    backend = PodmanBackend()
+    images = ImageManager(backend, release)
+
+    core_kolla = [
+        "mariadb", "rabbitmq", "memcached", "keystone",
+        "glance-api", "placement-api", "neutron-server",
+        "nova-api", "nova-scheduler", "nova-conductor", "nova-compute",
+        "ironic-api", "ironic-conductor",
+        "openvswitch-db-server", "openvswitch-vswitchd", "nova-libvirt",
+    ]
+
+    with console.status(f"Pulling {len(core_kolla)} Kolla images..."):
+        images.pull_kolla(core_kolla)
+
+    with console.status("Pulling Metal3 images..."):
+        images.pull_metal3(["sushy-tools"])
+
+    console.print(f"[green]Pulled {len(core_kolla) + 1} images[/green]")
 
 
 @cli.command()
@@ -64,6 +98,13 @@ def init(release):
 @click.option("--release", default=DEFAULT_RELEASE, help="Kolla image release tag")
 def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep, release):
     """Run a Zuul CI job locally."""
+    from pathlib import Path
+
+    from stackbox.bootstrap.orchestrator import BootstrapOrchestrator
+    from stackbox.config_gen import ConfigPipeline
+    from stackbox.containers.manifest import SessionManifest
+    from stackbox.containers.podman import PodmanBackend
+
     console = Console()
     local_repos = _parse_local_repos(local_repo)
 
@@ -81,8 +122,61 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
     console.print(f"  Boot interface: {config.boot_interface}")
     console.print(f"  BMC driver: {config.bmc_driver}")
     console.print(f"  VM count: {config.vm_specs.count}")
-    console.print(f"  Tempest regex: {config.tempest_test_regex}")
-    console.print("\n[yellow]Container orchestration not yet implemented (Phase 4)[/yellow]")
+
+    session_id = _uuid.uuid4().hex[:12]
+    session_dir = SESSIONS_DIR / session_id
+    configs_dir = session_dir / "configs"
+
+    with console.status("Generating configs..."):
+        pipeline = ConfigPipeline()
+        generated = pipeline.generate_all(config, configs_dir)
+
+    console.print(f"[green]Generated {len(generated)} config files[/green]")
+
+    backend = PodmanBackend()
+    manifest = SessionManifest(
+        session_id=session_id,
+        configs_dir=str(configs_dir),
+    )
+
+    orchestrator = BootstrapOrchestrator(
+        backend=backend,
+        job=config,
+        configs_dir=configs_dir,
+        manifest=manifest,
+        release=release,
+    )
+
+    try:
+        with console.status("Bootstrapping services..."):
+            orchestrator.run()
+
+        console.print("[green]All services bootstrapped[/green]")
+
+        if not skip_tempest and config.tempest_test_regex:
+            from stackbox.tempest.runner import TempestRunner
+
+            runner = TempestRunner(backend)
+            results_dir = session_dir / "results"
+            exit_code = runner.run(
+                tempest_conf=configs_dir / "tempest.conf",
+                test_regex=config.tempest_test_regex,
+                results_dir=results_dir,
+            )
+            if exit_code == 0:
+                console.print("[green]Tempest tests PASSED[/green]")
+            else:
+                console.print(f"[red]Tempest tests FAILED (exit {exit_code})[/red]")
+        elif skip_tempest:
+            console.print("[yellow]Tempest skipped (--skip-tempest)[/yellow]")
+
+    finally:
+        manifest.save(session_dir)
+        if not keep:
+            console.print("[yellow]Use 'stackbox clean' to tear down, or --keep to leave running[/yellow]")
+
+    console.print(f"\nSession: {session_id}")
+    console.print(f"Configs: {configs_dir}")
 
 
 @cli.command()
@@ -90,9 +184,17 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
 @click.option("--local-repo", multiple=True, help="service=path pairs for local builds")
 @click.option("--port-offset", type=int, default=0, help="Shift all service ports by N")
 @click.option("--dry-run", is_flag=True, help="Show config without deploying")
+@click.option("--skip-tempest", is_flag=True, help="Skip test execution")
 @click.option("--keep", is_flag=True, help="Keep containers running after tests")
-def reproduce(build_url, local_repo, port_offset, dry_run, keep):
+@click.option("--release", default=DEFAULT_RELEASE, help="Kolla image release tag")
+def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, release):
     """Reproduce a CI job from a Zuul build URL."""
+    from pathlib import Path
+
+    from stackbox.bootstrap.orchestrator import BootstrapOrchestrator
+    from stackbox.config_gen import ConfigPipeline
+    from stackbox.containers.manifest import SessionManifest
+    from stackbox.containers.podman import PodmanBackend
     from stackbox.reproducer.build_fetcher import BuildFetcher
     from stackbox.reproducer.inventory_parser import InventoryParser
     from stackbox.reproducer.variable_extractor import VariableExtractor
@@ -107,8 +209,6 @@ def reproduce(build_url, local_repo, port_offset, dry_run, keep):
         build_info = fetcher.fetch(build_url)
 
     console.print(f"[green]Build:[/green] {build_info.job_name} ({build_info.result})")
-    console.print(f"  Project: {build_info.project}")
-    console.print(f"  Branch: {build_info.branch}")
 
     with console.status("Fetching inventory..."):
         inv_parser = InventoryParser()
@@ -132,12 +232,46 @@ def reproduce(build_url, local_repo, port_offset, dry_run, keep):
         console.print_json(config.model_dump_json(indent=2))
         return
 
-    console.print(f"\n[green]Resolved config:[/green]")
-    console.print(f"  Boot interface: {config.boot_interface}")
-    console.print(f"  BMC driver: {config.bmc_driver}")
-    console.print(f"  VM count: {config.vm_specs.count}")
-    console.print(f"  Tempest regex: {config.tempest_test_regex}")
-    console.print("\n[yellow]Container orchestration not yet implemented (Phase 4)[/yellow]")
+    session_id = _uuid.uuid4().hex[:12]
+    session_dir = SESSIONS_DIR / session_id
+    configs_dir = session_dir / "configs"
+
+    with console.status("Generating configs..."):
+        pipeline = ConfigPipeline()
+        generated = pipeline.generate_all(config, configs_dir)
+
+    backend = PodmanBackend()
+    manifest = SessionManifest(session_id=session_id, configs_dir=str(configs_dir))
+
+    orchestrator = BootstrapOrchestrator(
+        backend=backend, job=config, configs_dir=configs_dir,
+        manifest=manifest, release=release,
+    )
+
+    try:
+        with console.status("Bootstrapping services..."):
+            orchestrator.run()
+
+        console.print("[green]All services bootstrapped[/green]")
+
+        if not skip_tempest and config.tempest_test_regex:
+            from stackbox.tempest.runner import TempestRunner
+
+            runner = TempestRunner(backend)
+            exit_code = runner.run(
+                tempest_conf=configs_dir / "tempest.conf",
+                test_regex=config.tempest_test_regex,
+                results_dir=session_dir / "results",
+            )
+            if exit_code == 0:
+                console.print("[green]Tempest tests PASSED[/green]")
+            else:
+                console.print(f"[red]Tempest tests FAILED (exit {exit_code})[/red]")
+
+    finally:
+        manifest.save(session_dir)
+
+    console.print(f"\nSession: {session_id}")
 
 
 @cli.command("list")
@@ -181,15 +315,49 @@ def list_jobs(project, pipeline):
 @cli.command()
 def status():
     """Show running stackbox containers."""
-    click.echo("stackbox status — not yet implemented")
+    from stackbox.containers.podman import PodmanBackend
+
+    console = Console()
+    backend = PodmanBackend()
+
+    containers = backend.list_containers(prefix="stackbox-")
+    if not containers:
+        console.print("No stackbox containers running")
+        return
+
+    table = Table(title="STACKBOX Containers")
+    table.add_column("Name", style="cyan")
+    table.add_column("Image")
+    table.add_column("Status")
+    table.add_column("Created")
+
+    for c in containers:
+        name = c.get("Names", [c.get("Name", "unknown")])
+        if isinstance(name, list):
+            name = name[0] if name else "unknown"
+        table.add_row(
+            name,
+            c.get("Image", ""),
+            c.get("State", c.get("Status", "")),
+            c.get("Created", ""),
+        )
+
+    console.print(table)
 
 
 @cli.command()
 @click.argument("service")
 @click.option("--follow", "-f", is_flag=True, help="Follow log output")
-def logs(service, follow):
+@click.option("--tail", type=int, default=None, help="Number of lines to show")
+def logs(service, follow, tail):
     """Tail logs from a service container."""
-    click.echo(f"stackbox logs {service} — not yet implemented")
+    from stackbox.containers.podman import PodmanBackend
+
+    backend = PodmanBackend()
+    name = f"stackbox-{service}" if not service.startswith("stackbox-") else service
+    output = backend.logs(name, follow=follow, tail=tail)
+    if output:
+        click.echo(output)
 
 
 @cli.command("exec")
@@ -197,7 +365,14 @@ def logs(service, follow):
 @click.argument("cmd", nargs=-1, required=True)
 def exec_cmd(service, cmd):
     """Execute a command in a service container."""
-    click.echo(f"stackbox exec {service} — not yet implemented")
+    from stackbox.containers.podman import PodmanBackend
+
+    backend = PodmanBackend()
+    name = f"stackbox-{service}" if not service.startswith("stackbox-") else service
+    exit_code, output = backend.exec(name, list(cmd))
+    if output:
+        click.echo(output)
+    raise SystemExit(exit_code)
 
 
 @cli.command()
@@ -226,7 +401,6 @@ def config(job_name, port_offset, offline, output_dir, show_json):
     if output_dir:
         out = Path(output_dir)
     else:
-        import uuid as _uuid
         session_id = _uuid.uuid4().hex[:12]
         out = SESSIONS_DIR / session_id / "configs"
 
@@ -240,7 +414,60 @@ def config(job_name, port_offset, offline, output_dir, show_json):
 
 
 @cli.command()
+@click.option("--session", default=None, help="Session ID to clean (default: latest)")
 @click.option("--all", "remove_all", is_flag=True, help="Also remove volumes and images")
-def clean(remove_all):
+def clean(session, remove_all):
     """Clean up all stackbox resources."""
-    click.echo("stackbox clean — not yet implemented")
+    import subprocess
+
+    from stackbox.containers.manifest import SessionManifest
+    from stackbox.containers.podman import PodmanBackend
+
+    console = Console()
+    backend = PodmanBackend()
+
+    if session:
+        session_dir = SESSIONS_DIR / session
+    else:
+        sessions = sorted(SESSIONS_DIR.iterdir()) if SESSIONS_DIR.exists() else []
+        if not sessions:
+            console.print("No sessions found")
+            return
+        session_dir = sessions[-1]
+
+    try:
+        manifest = SessionManifest.load(session_dir)
+    except FileNotFoundError:
+        console.print(f"[yellow]No manifest found in {session_dir}, cleaning by prefix[/yellow]")
+        containers = backend.list_containers(prefix="stackbox-")
+        for c in containers:
+            name = c.get("Names", [c.get("Name", "")])
+            if isinstance(name, list):
+                name = name[0] if name else ""
+            if name:
+                backend.stop(name)
+                backend.remove(name, force=True)
+                console.print(f"  Removed container {name}")
+        return
+
+    with console.status("Cleaning up..."):
+        for name in reversed(manifest.containers):
+            backend.stop(name)
+            backend.remove(name, force=True)
+            console.print(f"  Removed container {name}")
+
+        for domain in manifest.libvirt_domains:
+            subprocess.run(["virsh", "destroy", domain], capture_output=True)
+            subprocess.run(["virsh", "undefine", domain, "--remove-all-storage"], capture_output=True)
+            console.print(f"  Removed VM {domain}")
+
+        for bridge in manifest.ovs_bridges:
+            subprocess.run(["sudo", "ovs-vsctl", "--if-exists", "del-br", bridge], capture_output=True)
+            console.print(f"  Removed bridge {bridge}")
+
+        if remove_all:
+            for vol in manifest.volumes:
+                backend.remove_volume(vol)
+                console.print(f"  Removed volume {vol}")
+
+    console.print(f"[green]Session {manifest.session_id} cleaned up[/green]")

@@ -5,17 +5,18 @@ import ipaddress
 from stackbox.config_gen.base import ServiceConfigGenerator
 
 
-def _parse_dhcp_range(fixed_range: str) -> tuple[str, str, int]:
+def _parse_dhcp_range(fixed_range: str) -> tuple[str, str, str]:
     try:
         network = ipaddress.ip_network(fixed_range, strict=False)
     except ValueError:
-        return ("10.0.0.50", "10.0.0.150", 29)
+        return ("10.0.0.50", "10.0.0.150", "255.255.255.248")
     hosts = list(network.hosts())
     if len(hosts) < 4:
-        return ("10.0.0.50", "10.0.0.150", 29)
+        return ("10.0.0.50", "10.0.0.150", "255.255.255.248")
     start = hosts[len(hosts) // 4]
     end = hosts[-2]
-    return (str(start), str(end), network.prefixlen)
+    netmask = str(network.netmask)
+    return (str(start), str(end), netmask)
 
 
 def _gateway(fixed_range: str) -> str:

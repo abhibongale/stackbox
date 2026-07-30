@@ -29,6 +29,11 @@ class TestConfigPipeline:
             "definitions.json",
             "emulator.conf",
             "tempest.conf",
+            "dhcp_agent.ini",
+            "l3_agent.ini",
+            "openvswitch_agent.ini",
+            "libvirtd.conf",
+            "qemu.conf",
         }
         assert expected.issubset(set(generated))
 

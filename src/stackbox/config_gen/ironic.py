@@ -39,6 +39,18 @@ class IronicConfigGenerator(ServiceConfigGenerator):
             "endpoint_override": f"http://localhost:{self.ports.get('ironic-api')}",
         }
 
+        config["neutron"] = {
+            "auth_url": f"http://localhost:{self.ports.get('keystone')}",
+            "auth_type": "password",
+            "project_domain_name": "Default",
+            "user_domain_name": "Default",
+            "project_name": "service",
+            "username": "ironic",
+            "password": self._service_pass(),
+            "cleaning_network": "provisioning",
+            "provisioning_network": "provisioning",
+        }
+
         config["pxe"] = {
             "tftp_server": "localhost",
             "tftp_root": "/var/lib/ironic/tftpboot",

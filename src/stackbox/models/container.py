@@ -12,7 +12,6 @@ class HealthCheck(BaseModel):
     target: str
     interval_seconds: int = 5
     timeout_seconds: int = 60
-    retries: int = 12
 
 
 class ContainerSpec(BaseModel):

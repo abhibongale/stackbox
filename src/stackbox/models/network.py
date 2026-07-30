@@ -19,5 +19,5 @@ class NetworkConfig(BaseModel):
         allocation_pool_start="10.0.0.100",
         allocation_pool_end="10.0.0.200",
     )
-    cleaning_network: str = "cleaning"
-    ovs_bridge_mappings: str = "mynet:brbm"
+    cleaning_network: str = "provisioning"
+    ovs_bridge_mappings: str = "physnet1:brbm"
