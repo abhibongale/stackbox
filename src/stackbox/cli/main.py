@@ -2,7 +2,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from stackbox.config import REPO_CACHE_DIR
+from stackbox.config import REPO_CACHE_DIR, SESSIONS_DIR
 from stackbox.constants import DEFAULT_RELEASE
 
 
@@ -204,15 +204,39 @@ def exec_cmd(service, cmd):
 @click.argument("job_name")
 @click.option("--port-offset", type=int, default=0, help="Shift all service ports by N")
 @click.option("--offline", is_flag=True, help="Resolve from local zuul.d/ files")
-def config(job_name, port_offset, offline):
-    """Generate service configs without deploying."""
+@click.option("--output-dir", type=click.Path(), default=None, help="Directory for generated configs")
+@click.option("--json", "show_json", is_flag=True, help="Show resolved config JSON instead of generating files")
+def config(job_name, port_offset, offline, output_dir, show_json):
+    """Generate service configs for a Zuul job."""
+    from pathlib import Path
+
     console = Console()
 
     with console.status(f"Resolving job [bold]{job_name}[/bold]..."):
         resolved = _resolve_job(job_name, offline)
 
     resolved.port_offset = port_offset
-    console.print_json(resolved.model_dump_json(indent=2))
+
+    if show_json:
+        console.print_json(resolved.model_dump_json(indent=2))
+        return
+
+    from stackbox.config_gen import ConfigPipeline
+
+    if output_dir:
+        out = Path(output_dir)
+    else:
+        import uuid as _uuid
+        session_id = _uuid.uuid4().hex[:12]
+        out = SESSIONS_DIR / session_id / "configs"
+
+    with console.status("Generating configs..."):
+        pipeline = ConfigPipeline()
+        generated = pipeline.generate_all(resolved, out)
+
+    console.print(f"[green]Generated {len(generated)} config files in:[/green] {out}")
+    for f in generated:
+        console.print(f"  {f}")
 
 
 @cli.command()
