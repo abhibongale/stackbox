@@ -1,4 +1,6 @@
+import signal
 import uuid as _uuid
+from contextlib import contextmanager
 
 import click
 from rich.console import Console
@@ -20,6 +22,113 @@ def _parse_local_repos(local_repo: tuple[str, ...]) -> dict[str, str]:
     return repos
 
 
+def _print_dry_run(console, config, release, local_repos=None):
+    import tempfile
+    from pathlib import Path
+
+    from rich.panel import Panel
+    from rich.text import Text
+
+    from stackbox.config_gen import ConfigPipeline
+    from stackbox.config_gen.ports import PortManager
+    from stackbox.constants import BASE_PORTS
+    from stackbox.containers.specs import SHARED_VOLUMES, build_container_specs, required_containers
+
+    pm = PortManager(offset=config.port_offset)
+    needed = required_containers(config)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        pipeline = ConfigPipeline()
+        generated = pipeline.generate_all(config, tmp_path)
+
+    specs = build_container_specs(config, Path("/etc/stackbox/configs"), pm, release)
+
+    console.print()
+    console.print(Panel("[bold]STACKBOX Dry Run[/bold]", style="cyan"))
+
+    summary = Table(show_header=False, box=None, padding=(0, 2))
+    summary.add_column(style="bold")
+    summary.add_column()
+    summary.add_row("Job", config.job_name)
+    summary.add_row("Boot interface", config.boot_interface)
+    summary.add_row("BMC driver", config.bmc_driver)
+    summary.add_row("VMs", f"{config.vm_specs.count}x (RAM={config.vm_specs.ram_mb}MB, CPU={config.vm_specs.cpu}, Disk={config.vm_specs.disk_gb}GB)")
+    summary.add_row("Port offset", str(config.port_offset))
+    summary.add_row("Release", release)
+    if config.tempest_test_regex:
+        summary.add_row("Tempest regex", config.tempest_test_regex)
+    console.print(summary)
+    console.print()
+
+    if local_repos:
+        console.print("[bold]Local Dev Builds:[/bold]")
+        for service, path in local_repos.items():
+            console.print(f"  {service} <- {path}  [dim](stackbox-{service}:local)[/dim]")
+        console.print()
+
+    port_table = Table(title="Port Assignments")
+    port_table.add_column("Service", style="cyan")
+    port_table.add_column("Port", style="green")
+    for svc in sorted(BASE_PORTS):
+        port_table.add_row(svc, str(pm.get(svc)))
+    console.print(port_table)
+    console.print()
+
+    console.print(f"[bold]Config Files ({len(generated)}):[/bold]")
+    for f in generated:
+        console.print(f"  {f}")
+    console.print()
+
+    spec_table = Table(title=f"Containers ({len(specs)})")
+    spec_table.add_column("Name", style="cyan")
+    spec_table.add_column("Image")
+    spec_table.add_column("Privileged")
+    spec_table.add_column("Health Check")
+    spec_table.add_column("Volumes", justify="right")
+    for s in specs:
+        hc = ""
+        if s.health_check:
+            hc = f"{s.health_check.type}: {s.health_check.target}"
+        spec_table.add_row(
+            s.name,
+            s.image.split("/")[-1],
+            "[red]yes[/red]" if s.privileged else "no",
+            hc,
+            str(len(s.volumes)),
+        )
+    console.print(spec_table)
+    console.print()
+
+    console.print("[bold]Shared Volumes:[/bold]")
+    for vol_name, mount_path in SHARED_VOLUMES.items():
+        console.print(f"  {vol_name} -> {mount_path}")
+    console.print()
+
+    phases = [
+        ("1. Infrastructure", ["mariadb", "rabbitmq", "memcached", "keystone"]),
+        ("2. Keystone bootstrap", ["keystone (db_sync, fernet, bootstrap, users)"]),
+        ("3. Service catalog", ["Register endpoints in Keystone"]),
+        ("4. Database sync", ["glance, neutron, nova, placement, ironic (parallel)"]),
+        ("5. Start services", [", ".join(s) for group in [
+            ["placement-api"], ["glance-api"],
+            ["OVS"], ["neutron-server", "agents"],
+            ["nova-api", "nova-scheduler", "nova-conductor"],
+            ["ironic-api", "ironic-conductor"], ["nova-compute"],
+        ] for s in [group]]),
+        ("6. Network & resources", ["OVS bridges, provisioning network, flavor, deploy images"]),
+        ("7. Baremetal", [f"Create {config.vm_specs.count} VMs, start BMC ({config.bmc_driver}), enroll nodes"]),
+        ("8. Tempest", [config.tempest_test_regex or "(skipped)"]),
+    ]
+
+    console.print("[bold]Bootstrap Phases:[/bold]")
+    for title, details in phases:
+        console.print(f"  [cyan]{title}[/cyan]")
+        for d in details:
+            console.print(f"    {d}")
+    console.print()
+
+
 def _resolve_job(job_name, offline, project="openstack/ironic", branch="master", pipeline="gate"):
     if offline:
         from stackbox.zuul.parser import OfflineJobParser
@@ -38,10 +147,50 @@ def _resolve_job(job_name, offline, project="openstack/ironic", branch="master",
         return resolver.resolve(job_name, project=project, branch=branch, pipeline=pipeline)
 
 
+@contextmanager
+def _graceful_shutdown(manifest, session_dir, console):
+    old_int = signal.getsignal(signal.SIGINT)
+    old_term = signal.getsignal(signal.SIGTERM)
+
+    def _handler(signum, frame):
+        sig = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
+        console.print(f"\n[yellow]{sig} received. Saving manifest...[/yellow]")
+        manifest.save(session_dir)
+        console.print(
+            f"[yellow]Run 'stackbox clean --session {manifest.session_id}' to remove resources[/yellow]"
+        )
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGINT, _handler)
+    signal.signal(signal.SIGTERM, _handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, old_int)
+        signal.signal(signal.SIGTERM, old_term)
+
+
 @click.group()
 @click.version_option(package_name="stackbox")
-def cli():
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose (DEBUG) logging")
+@click.option("--log-file", type=click.Path(), default=None, help="Write logs to file")
+def cli(verbose, log_file):
     """STACKBOX — Run OpenStack Ironic Zuul CI jobs locally."""
+    import logging
+
+    from stackbox.config import ensure_dirs
+
+    ensure_dirs()
+
+    level = logging.DEBUG if verbose else logging.WARNING
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log_file:
+        handlers.append(logging.FileHandler(log_file))
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=handlers,
+    )
 
 
 @cli.command()
@@ -96,7 +245,9 @@ def init(release):
 @click.option("--skip-tempest", is_flag=True, help="Skip test execution")
 @click.option("--keep", is_flag=True, help="Keep containers running after tests")
 @click.option("--release", default=DEFAULT_RELEASE, help="Kolla image release tag")
-def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep, release):
+@click.option("--project", default="openstack/ironic", help="OpenStack project")
+@click.option("--branch", default="master", help="Git branch")
+def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep, release, project, branch):
     """Run a Zuul CI job locally."""
     from pathlib import Path
 
@@ -109,13 +260,23 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
     local_repos = _parse_local_repos(local_repo)
 
     with console.status(f"Resolving job [bold]{job_name}[/bold]..."):
-        config = _resolve_job(job_name, offline)
+        config = _resolve_job(job_name, offline, project=project, branch=branch)
 
     config.local_repos = local_repos
     config.port_offset = port_offset
 
+    image_overrides: dict[str, str] = {}
+    if local_repos:
+        from stackbox.containers.images import ImageManager
+
+        backend = PodmanBackend()
+        images = ImageManager(backend, release)
+        with console.status(f"Building {len(local_repos)} local dev images..."):
+            image_overrides = images.build_local_repos(local_repos)
+        console.print(f"[green]Built {len(image_overrides)} dev images[/green]")
+
     if dry_run:
-        console.print_json(config.model_dump_json(indent=2))
+        _print_dry_run(console, config, release, local_repos=local_repos)
         return
 
     console.print(f"[green]Resolved job:[/green] {config.job_name}")
@@ -133,7 +294,8 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
 
     console.print(f"[green]Generated {len(generated)} config files[/green]")
 
-    backend = PodmanBackend()
+    if not local_repos:
+        backend = PodmanBackend()
     manifest = SessionManifest(
         session_id=session_id,
         configs_dir=str(configs_dir),
@@ -145,35 +307,52 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
         configs_dir=configs_dir,
         manifest=manifest,
         release=release,
+        image_overrides=image_overrides or None,
     )
 
-    try:
-        with console.status("Bootstrapping services..."):
-            orchestrator.run()
+    with _graceful_shutdown(manifest, session_dir, console):
+        try:
+            with console.status("Bootstrapping services..."):
+                orchestrator.run()
 
-        console.print("[green]All services bootstrapped[/green]")
+            console.print("[green]All services bootstrapped[/green]")
 
-        if not skip_tempest and config.tempest_test_regex:
-            from stackbox.tempest.runner import TempestRunner
+            if not skip_tempest and config.tempest_test_regex:
+                from stackbox.tempest.runner import TempestRunner
 
-            runner = TempestRunner(backend)
-            results_dir = session_dir / "results"
-            exit_code = runner.run(
-                tempest_conf=configs_dir / "tempest.conf",
-                test_regex=config.tempest_test_regex,
-                results_dir=results_dir,
-            )
-            if exit_code == 0:
-                console.print("[green]Tempest tests PASSED[/green]")
-            else:
-                console.print(f"[red]Tempest tests FAILED (exit {exit_code})[/red]")
-        elif skip_tempest:
-            console.print("[yellow]Tempest skipped (--skip-tempest)[/yellow]")
+                runner = TempestRunner(backend, manifest)
+                results_dir = session_dir / "results"
 
-    finally:
-        manifest.save(session_dir)
-        if not keep:
-            console.print("[yellow]Use 'stackbox clean' to tear down, or --keep to leave running[/yellow]")
+                tempest_image = "stackbox-tempest:local"
+                plugin_source = local_repos.get("ironic-tempest-plugin")
+                if plugin_source:
+                    from stackbox.containers.images import CONTAINERFILES_DIR, ImageManager
+
+                    images = ImageManager(backend, release)
+                    with console.status("Building custom tempest image..."):
+                        tempest_image = images.build_tempest(
+                            context=str(CONTAINERFILES_DIR),
+                            containerfile=str(CONTAINERFILES_DIR / "Containerfile.tempest"),
+                            plugin_source=plugin_source,
+                        )
+
+                exit_code = runner.run(
+                    tempest_conf=configs_dir / "tempest.conf",
+                    test_regex=config.tempest_test_regex,
+                    results_dir=results_dir,
+                    image=tempest_image,
+                )
+                if exit_code == 0:
+                    console.print("[green]Tempest tests PASSED[/green]")
+                else:
+                    console.print(f"[red]Tempest tests FAILED (exit {exit_code})[/red]")
+            elif skip_tempest:
+                console.print("[yellow]Tempest skipped (--skip-tempest)[/yellow]")
+
+        finally:
+            manifest.save(session_dir)
+            if not keep:
+                console.print("[yellow]Use 'stackbox clean' to tear down, or --keep to leave running[/yellow]")
 
     console.print(f"\nSession: {session_id}")
     console.print(f"Configs: {configs_dir}")
@@ -228,8 +407,18 @@ def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, r
     config.local_repos = local_repos
     config.port_offset = port_offset
 
+    image_overrides: dict[str, str] = {}
+    if local_repos:
+        from stackbox.containers.images import ImageManager
+
+        backend = PodmanBackend()
+        images = ImageManager(backend, release)
+        with console.status(f"Building {len(local_repos)} local dev images..."):
+            image_overrides = images.build_local_repos(local_repos)
+        console.print(f"[green]Built {len(image_overrides)} dev images[/green]")
+
     if dry_run:
-        console.print_json(config.model_dump_json(indent=2))
+        _print_dry_run(console, config, release, local_repos=local_repos)
         return
 
     session_id = _uuid.uuid4().hex[:12]
@@ -240,38 +429,63 @@ def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, r
         pipeline = ConfigPipeline()
         generated = pipeline.generate_all(config, configs_dir)
 
-    backend = PodmanBackend()
+    if not local_repos:
+        backend = PodmanBackend()
     manifest = SessionManifest(session_id=session_id, configs_dir=str(configs_dir))
 
     orchestrator = BootstrapOrchestrator(
         backend=backend, job=config, configs_dir=configs_dir,
         manifest=manifest, release=release,
+        image_overrides=image_overrides or None,
     )
 
-    try:
-        with console.status("Bootstrapping services..."):
-            orchestrator.run()
+    with _graceful_shutdown(manifest, session_dir, console):
+        try:
+            with console.status("Bootstrapping services..."):
+                orchestrator.run()
 
-        console.print("[green]All services bootstrapped[/green]")
+            console.print("[green]All services bootstrapped[/green]")
 
-        if not skip_tempest and config.tempest_test_regex:
-            from stackbox.tempest.runner import TempestRunner
+            if not skip_tempest and config.tempest_test_regex:
+                from stackbox.tempest.runner import TempestRunner
 
-            runner = TempestRunner(backend)
-            exit_code = runner.run(
-                tempest_conf=configs_dir / "tempest.conf",
-                test_regex=config.tempest_test_regex,
-                results_dir=session_dir / "results",
-            )
-            if exit_code == 0:
-                console.print("[green]Tempest tests PASSED[/green]")
-            else:
-                console.print(f"[red]Tempest tests FAILED (exit {exit_code})[/red]")
+                runner = TempestRunner(backend, manifest)
 
-    finally:
-        manifest.save(session_dir)
+                tempest_image = "stackbox-tempest:local"
+                plugin_source = local_repos.get("ironic-tempest-plugin")
+                if plugin_source:
+                    from stackbox.containers.images import CONTAINERFILES_DIR, ImageManager
+
+                    images = ImageManager(backend, release)
+                    with console.status("Building custom tempest image..."):
+                        tempest_image = images.build_tempest(
+                            context=str(CONTAINERFILES_DIR),
+                            containerfile=str(CONTAINERFILES_DIR / "Containerfile.tempest"),
+                            plugin_source=plugin_source,
+                        )
+
+                exit_code = runner.run(
+                    tempest_conf=configs_dir / "tempest.conf",
+                    test_regex=config.tempest_test_regex,
+                    results_dir=session_dir / "results",
+                    image=tempest_image,
+                )
+                if exit_code == 0:
+                    console.print("[green]Tempest tests PASSED[/green]")
+                else:
+                    console.print(f"[red]Tempest tests FAILED (exit {exit_code})[/red]")
+            elif skip_tempest:
+                console.print("[yellow]Tempest skipped (--skip-tempest)[/yellow]")
+
+        finally:
+            manifest.save(session_dir)
+            if not keep:
+                console.print(
+                    f"[yellow]Use 'stackbox clean --session {manifest.session_id}' to remove resources[/yellow]"
+                )
 
     console.print(f"\nSession: {session_id}")
+    console.print(f"Configs: {configs_dir}")
 
 
 @cli.command("list")
@@ -381,14 +595,16 @@ def exec_cmd(service, cmd):
 @click.option("--offline", is_flag=True, help="Resolve from local zuul.d/ files")
 @click.option("--output-dir", type=click.Path(), default=None, help="Directory for generated configs")
 @click.option("--json", "show_json", is_flag=True, help="Show resolved config JSON instead of generating files")
-def config(job_name, port_offset, offline, output_dir, show_json):
+@click.option("--project", default="openstack/ironic", help="OpenStack project")
+@click.option("--branch", default="master", help="Git branch")
+def config(job_name, port_offset, offline, output_dir, show_json, project, branch):
     """Generate service configs for a Zuul job."""
     from pathlib import Path
 
     console = Console()
 
     with console.status(f"Resolving job [bold]{job_name}[/bold]..."):
-        resolved = _resolve_job(job_name, offline)
+        resolved = _resolve_job(job_name, offline, project=project, branch=branch)
 
     resolved.port_offset = port_offset
 
@@ -416,8 +632,10 @@ def config(job_name, port_offset, offline, output_dir, show_json):
 @cli.command()
 @click.option("--session", default=None, help="Session ID to clean (default: latest)")
 @click.option("--all", "remove_all", is_flag=True, help="Also remove volumes and images")
-def clean(session, remove_all):
+@click.option("--force", is_flag=True, help="Skip graceful stop, force-remove containers")
+def clean(session, remove_all, force):
     """Clean up all stackbox resources."""
+    import shutil
     import subprocess
 
     from stackbox.containers.manifest import SessionManifest
@@ -445,14 +663,16 @@ def clean(session, remove_all):
             if isinstance(name, list):
                 name = name[0] if name else ""
             if name:
-                backend.stop(name)
+                if not force:
+                    backend.stop(name)
                 backend.remove(name, force=True)
                 console.print(f"  Removed container {name}")
         return
 
     with console.status("Cleaning up..."):
         for name in reversed(manifest.containers):
-            backend.stop(name)
+            if not force:
+                backend.stop(name)
             backend.remove(name, force=True)
             console.print(f"  Removed container {name}")
 
@@ -470,4 +690,5 @@ def clean(session, remove_all):
                 backend.remove_volume(vol)
                 console.print(f"  Removed volume {vol}")
 
+    shutil.rmtree(session_dir, ignore_errors=True)
     console.print(f"[green]Session {manifest.session_id} cleaned up[/green]")

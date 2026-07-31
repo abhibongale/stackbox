@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from stackbox.constants import KOLLA_IMAGES, KOLLA_REGISTRY, METAL3_IMAGES, METAL3_REGISTRY
 from stackbox.containers.backend import ContainerBackend
 
 log = logging.getLogger(__name__)
+
+CONTAINERFILES_DIR = Path(__file__).parent
 
 
 class ImageManager:
@@ -43,6 +46,22 @@ class ImageManager:
             build_args={"SERVICE_NAME": service},
         )
         return tag
+
+    def build_local_repos(self, local_repos: dict[str, str]) -> dict[str, str]:
+        from stackbox.exceptions import ImageBuildError
+
+        overrides: dict[str, str] = {}
+        containerfile = str(CONTAINERFILES_DIR / "Containerfile.service-dev")
+        for service, source_path in local_repos.items():
+            log.info("Building local image for %s from %s", service, source_path)
+            try:
+                tag = self.build_local(service, source_path, containerfile)
+            except Exception as exc:
+                raise ImageBuildError(
+                    f"Failed to build {service} from {source_path}: {exc}"
+                ) from exc
+            overrides[service] = tag
+        return overrides
 
     def build_tempest(
         self,

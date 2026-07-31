@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from stackbox.baremetal.bmc import setup_vbmc, wait_for_bmc
@@ -34,6 +35,7 @@ class BootstrapOrchestrator:
         configs_dir: Path,
         manifest: SessionManifest,
         release: str = "master-ubuntu-noble",
+        image_overrides: dict[str, str] | None = None,
     ):
         self.backend = backend
         self.job = job
@@ -42,43 +44,47 @@ class BootstrapOrchestrator:
         self.release = release
         self.port_manager = PortManager(offset=job.port_offset)
         self.admin_pass = job.devstack_localrc.get("ADMIN_PASSWORD", "secretadmin")
-        self.specs = build_container_specs(job, configs_dir, self.port_manager, release)
+        self.specs = build_container_specs(
+            job, configs_dir, self.port_manager, release, image_overrides=image_overrides,
+        )
 
     def _specs_by_name(self) -> dict[str, object]:
         return {s.name: s for s in self.specs}
 
-    def run(self) -> None:
-        log.info("=== Phase 1: Create shared volumes ===")
-        self._create_volumes()
-
-        log.info("=== Phase 2: Start infrastructure ===")
-        self._start_infrastructure()
-
-        log.info("=== Phase 3: Bootstrap Keystone ===")
-        bootstrap_keystone(self.backend, self.port_manager, self.admin_pass)
-
-        log.info("=== Phase 4: Register service catalog ===")
-        register_services(self.backend, self.job, self.port_manager, self.admin_pass)
-
-        log.info("=== Phase 5: Database sync (parallel) ===")
+    def _run_dbsync_phase(self) -> None:
         self._start_dbsync_containers()
         run_dbsync(self.backend, self.job)
 
-        log.info("=== Phase 6: Start services ===")
-        start_services(self.backend, self.job, self.specs, self.manifest)
-
-        log.info("=== Phase 7: Network and resource setup ===")
+    def _run_network_phase(self) -> None:
         setup_ovs_bridges(self.manifest)
         create_networks(
             self.backend, NetworkConfig(), self.port_manager, self.admin_pass,
         )
         setup_resources(self.backend, self.job, self.port_manager, self.admin_pass)
 
-        log.info("=== Phase 8: Baremetal VMs and enrollment ===")
-        self._setup_baremetal()
+    def run(self) -> None:
+        phases = [
+            ("Create shared volumes", self._create_volumes),
+            ("Start infrastructure", self._start_infrastructure),
+            ("Bootstrap Keystone", lambda: bootstrap_keystone(self.backend, self.port_manager, self.admin_pass)),
+            ("Register service catalog", lambda: register_services(self.backend, self.job, self.port_manager, self.admin_pass)),
+            ("Database sync", self._run_dbsync_phase),
+            ("Start services", lambda: start_services(self.backend, self.job, self.specs, self.manifest)),
+            ("Network and resource setup", self._run_network_phase),
+            ("Baremetal VMs and enrollment", self._setup_baremetal),
+        ]
+
+        total_start = time.monotonic()
+        for i, (name, func) in enumerate(phases, 1):
+            log.info("=== Phase %d: %s ===", i, name)
+            phase_start = time.monotonic()
+            func()
+            elapsed = time.monotonic() - phase_start
+            log.info("Phase %d (%s) completed in %.1fs", i, name, elapsed)
 
         self.manifest.save(Path(self.manifest.configs_dir).parent)
-        log.info("Bootstrap complete")
+        total = time.monotonic() - total_start
+        log.info("Bootstrap complete in %.1fs", total)
 
     def _create_volumes(self) -> None:
         for vol_name in SHARED_VOLUMES:

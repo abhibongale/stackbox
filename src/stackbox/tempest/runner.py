@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from stackbox.containers.backend import ContainerBackend
+from stackbox.containers.manifest import SessionManifest
 from stackbox.exceptions import BootstrapError
 
 log = logging.getLogger(__name__)
@@ -15,8 +16,9 @@ CONTAINER = "stackbox-tempest"
 
 class TempestRunner:
 
-    def __init__(self, backend: ContainerBackend):
+    def __init__(self, backend: ContainerBackend, manifest: SessionManifest | None = None):
         self.backend = backend
+        self.manifest = manifest
 
     def run(
         self,
@@ -54,6 +56,9 @@ class TempestRunner:
         except Exception:
             pass
 
+        if self.manifest:
+            self.manifest.record_container(CONTAINER)
+
         cmd = self._build_run_cmd(spec)
         log.info("Running: %s", " ".join(cmd))
 
@@ -72,7 +77,7 @@ class TempestRunner:
 
     def _build_run_cmd(self, spec: ContainerSpec) -> list[str]:
         cmd = [
-            "podman", "run", "--rm",
+            "podman", "run",
             "--name", spec.name,
             "--network", spec.network,
         ]

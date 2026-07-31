@@ -22,6 +22,10 @@ class ContainerError(StackboxError):
     """Container operation failed."""
 
 
+class ImageBuildError(ContainerError):
+    """Container image build failed."""
+
+
 class BootstrapError(StackboxError):
     """Service bootstrap step failed."""
 

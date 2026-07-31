@@ -28,7 +28,7 @@ class TestTempestRunner:
         cmd = runner._build_run_cmd(spec)
         assert cmd[0] == "podman"
         assert "run" in cmd
-        assert "--rm" in cmd
+        assert "--rm" not in cmd
         assert "--name" in cmd
         assert "stackbox-tempest" in cmd
         assert "--network" in cmd
@@ -109,3 +109,32 @@ class TestTempestRunner:
 
         runner.run(conf, "test_baremetal", results)
         runner.backend.remove.assert_called_once_with("stackbox-tempest", force=True)
+
+    @patch("subprocess.Popen")
+    def test_manifest_records_container(self, mock_popen, tmp_path):
+        backend = MagicMock()
+        manifest = MagicMock()
+        runner = TempestRunner(backend=backend, manifest=manifest)
+
+        conf = tmp_path / "tempest.conf"
+        conf.write_text("[DEFAULT]\n")
+        results = tmp_path / "results"
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        runner.run(conf, "test_baremetal", results)
+        manifest.record_container.assert_called_once_with("stackbox-tempest")
+
+    @patch("subprocess.Popen")
+    def test_no_manifest_no_error(self, mock_popen, runner, tmp_path):
+        conf = tmp_path / "tempest.conf"
+        conf.write_text("[DEFAULT]\n")
+        results = tmp_path / "results"
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        runner.run(conf, "test_baremetal", results)

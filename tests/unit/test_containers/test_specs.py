@@ -150,3 +150,40 @@ class TestBuildContainerSpecs:
         compute = next(s for s in specs if s.name == "stackbox-nova-compute")
         vol_targets = [v.target for v in compute.volumes]
         assert "/var/run/libvirt/" in vol_targets
+
+    def test_image_override_replaces_kolla(self, tmp_path):
+        job = ResolvedJobConfig(job_name="test")
+        pm = PortManager()
+        overrides = {"ironic-api": "my-custom-ironic:dev"}
+        specs = build_container_specs(
+            job, tmp_path, pm, "master-ubuntu-noble", image_overrides=overrides,
+        )
+        ironic = next(s for s in specs if s.name == "stackbox-ironic-api")
+        assert ironic.image == "my-custom-ironic:dev"
+
+    def test_image_override_does_not_affect_others(self, tmp_path):
+        job = ResolvedJobConfig(job_name="test")
+        pm = PortManager()
+        overrides = {"ironic-api": "my-custom-ironic:dev"}
+        specs = build_container_specs(
+            job, tmp_path, pm, "master-ubuntu-noble", image_overrides=overrides,
+        )
+        mariadb = next(s for s in specs if s.name == "stackbox-mariadb")
+        assert "kolla" in mariadb.image
+
+    def test_image_override_metal3(self, tmp_path):
+        job = ResolvedJobConfig(job_name="test", bmc_driver="redfish")
+        pm = PortManager()
+        overrides = {"sushy-tools": "my-sushy:custom"}
+        specs = build_container_specs(
+            job, tmp_path, pm, "master-ubuntu-noble", image_overrides=overrides,
+        )
+        sushy = next(s for s in specs if s.name == "stackbox-sushy-tools")
+        assert sushy.image == "my-sushy:custom"
+
+    def test_no_overrides_uses_defaults(self, tmp_path):
+        job = ResolvedJobConfig(job_name="test")
+        pm = PortManager()
+        specs = build_container_specs(job, tmp_path, pm, "master-ubuntu-noble")
+        ironic = next(s for s in specs if s.name == "stackbox-ironic-api")
+        assert "kolla" in ironic.image

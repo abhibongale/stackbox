@@ -31,6 +31,9 @@ stackbox = "stackbox.cli.main:cli"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"stackbox.containers" = ["Containerfile.*"]
+
 [tool.ruff]
 target-version = "py310"
 line-length = 100

@@ -74,3 +74,23 @@ class TestImageManager:
             containerfile="Containerfile.tempest",
             build_args={"TEMPEST_PLUGIN_SOURCE": "/src/ironic-tempest-plugin"},
         )
+
+    def test_build_local_repos_returns_overrides(self, img_mgr):
+        overrides = img_mgr.build_local_repos({"ironic-api": "/src/ironic", "nova-api": "/src/nova"})
+        assert overrides == {
+            "ironic-api": "stackbox-ironic-api:local",
+            "nova-api": "stackbox-nova-api:local",
+        }
+        assert img_mgr.backend.build_image.call_count == 2
+
+    def test_build_local_repos_empty(self, img_mgr):
+        overrides = img_mgr.build_local_repos({})
+        assert overrides == {}
+        img_mgr.backend.build_image.assert_not_called()
+
+    def test_build_local_repos_raises_image_build_error(self, img_mgr):
+        from stackbox.exceptions import ImageBuildError
+
+        img_mgr.backend.build_image.side_effect = RuntimeError("build failed")
+        with pytest.raises(ImageBuildError, match="Failed to build ironic-api"):
+            img_mgr.build_local_repos({"ironic-api": "/src/ironic"})

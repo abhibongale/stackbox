@@ -105,3 +105,11 @@ class TestBootstrapOrchestrator:
         assert "stackbox-glance-api" in started
         assert "stackbox-neutron-server" in started
         assert "stackbox-ironic-api" in started
+
+    def test_image_overrides_propagate_to_specs(self, mock_backend, job, manifest, tmp_path):
+        overrides = {"ironic-api": "custom-ironic:dev"}
+        orch = BootstrapOrchestrator(
+            mock_backend, job, tmp_path, manifest, image_overrides=overrides,
+        )
+        ironic = next(s for s in orch.specs if s.name == "stackbox-ironic-api")
+        assert ironic.image == "custom-ironic:dev"

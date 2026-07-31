@@ -10,6 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m venv /opt/stackbox/venv
 ENV PATH="/opt/stackbox/venv/bin:$PATH"
 
-COPY ./source /opt/stackbox/source
+COPY . /opt/stackbox/source
 RUN pip install --no-cache-dir -e /opt/stackbox/source
 RUN pip install --no-cache-dir pymysql python-memcached uwsgi

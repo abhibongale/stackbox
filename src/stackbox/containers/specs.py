@@ -24,6 +24,14 @@ def _kolla(service: str, release: str) -> str:
     return f"{KOLLA_REGISTRY}/{image_name}:{release}"
 
 
+def _image_for(
+    service: str, release: str, overrides: dict[str, str] | None,
+) -> str:
+    if overrides and service in overrides:
+        return overrides[service]
+    return _kolla(service, release)
+
+
 def _vol(source: str, target: str, options: str = "z") -> VolumeMount:
     return VolumeMount(source=source, target=target, options=options)
 
@@ -71,6 +79,7 @@ def build_container_specs(
     configs_dir: Path,
     port_manager: PortManager,
     release: str,
+    image_overrides: dict[str, str] | None = None,
 ) -> list[ContainerSpec]:
     specs: list[ContainerSpec] = []
     needed = required_containers(job)
@@ -78,7 +87,7 @@ def build_container_specs(
     if "mariadb" in needed:
         specs.append(ContainerSpec(
             name=_name("mariadb"),
-            image=_kolla("mariadb", release),
+            image=_image_for("mariadb", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "init.sql", "/docker-entrypoint-initdb.d/init.sql"),
             ],
@@ -91,7 +100,7 @@ def build_container_specs(
     if "rabbitmq" in needed:
         specs.append(ContainerSpec(
             name=_name("rabbitmq"),
-            image=_kolla("rabbitmq", release),
+            image=_image_for("rabbitmq", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "rabbitmq.conf", "/etc/rabbitmq/rabbitmq.conf"),
                 _config_vol(configs_dir, "definitions.json", "/etc/rabbitmq/definitions.json"),
@@ -104,7 +113,7 @@ def build_container_specs(
     if "memcached" in needed:
         specs.append(ContainerSpec(
             name=_name("memcached"),
-            image=_kolla("memcached", release),
+            image=_image_for("memcached", release, image_overrides),
             health_check=HealthCheck(
                 type="tcp", target=str(port_manager.get("memcached")), timeout_seconds=30,
             ),
@@ -113,7 +122,7 @@ def build_container_specs(
     if "keystone" in needed:
         specs.append(ContainerSpec(
             name=_name("keystone"),
-            image=_kolla("keystone", release),
+            image=_image_for("keystone", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "keystone.conf", "/etc/keystone/keystone.conf"),
             ],
@@ -127,7 +136,7 @@ def build_container_specs(
     if "glance-api" in needed:
         specs.append(ContainerSpec(
             name=_name("glance-api"),
-            image=_kolla("glance-api", release),
+            image=_image_for("glance-api", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "glance-api.conf", "/etc/glance/glance-api.conf"),
                 _shared_vol("stackbox-ironic-httpboot"),
@@ -142,7 +151,7 @@ def build_container_specs(
     if "placement-api" in needed:
         specs.append(ContainerSpec(
             name=_name("placement-api"),
-            image=_kolla("placement-api", release),
+            image=_image_for("placement-api", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "placement.conf", "/etc/placement/placement.conf"),
             ],
@@ -156,7 +165,7 @@ def build_container_specs(
     if "neutron-server" in needed:
         specs.append(ContainerSpec(
             name=_name("neutron-server"),
-            image=_kolla("neutron-server", release),
+            image=_image_for("neutron-server", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "neutron.conf", "/etc/neutron/neutron.conf"),
                 _config_vol(configs_dir, "ml2_conf.ini", "/etc/neutron/plugins/ml2/ml2_conf.ini"),
@@ -189,7 +198,7 @@ def build_container_specs(
             ] + _neutron_agent_configs.get(agent, [])
             specs.append(ContainerSpec(
                 name=_name(agent),
-                image=_kolla(agent, release),
+                image=_image_for(agent, release, image_overrides),
                 privileged=True,
                 volumes=vols,
             ))
@@ -205,7 +214,7 @@ def build_container_specs(
                 )
             specs.append(ContainerSpec(
                 name=_name(svc),
-                image=_kolla(svc, release),
+                image=_image_for(svc, release, image_overrides),
                 volumes=[
                     _config_vol(configs_dir, "nova.conf", "/etc/nova/nova.conf"),
                 ],
@@ -215,7 +224,7 @@ def build_container_specs(
     if "nova-compute" in needed:
         specs.append(ContainerSpec(
             name=_name("nova-compute"),
-            image=_kolla("nova-compute", release),
+            image=_image_for("nova-compute", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "nova.conf", "/etc/nova/nova.conf"),
                 _shared_vol("stackbox-libvirt-sock"),
@@ -225,7 +234,7 @@ def build_container_specs(
     if "ironic-api" in needed:
         specs.append(ContainerSpec(
             name=_name("ironic-api"),
-            image=_kolla("ironic-api", release),
+            image=_image_for("ironic-api", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "ironic.conf", "/etc/ironic/ironic.conf"),
             ],
@@ -239,7 +248,7 @@ def build_container_specs(
     if "ironic-conductor" in needed:
         specs.append(ContainerSpec(
             name=_name("ironic-conductor"),
-            image=_kolla("ironic-conductor", release),
+            image=_image_for("ironic-conductor", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "ironic.conf", "/etc/ironic/ironic.conf"),
                 _shared_vol("stackbox-ironic-httpboot"),
@@ -249,7 +258,7 @@ def build_container_specs(
     if "openvswitch-db-server" in needed:
         specs.append(ContainerSpec(
             name=_name("openvswitch-db-server"),
-            image=_kolla("openvswitch-db-server", release),
+            image=_image_for("openvswitch-db-server", release, image_overrides),
             privileged=True,
             volumes=[_shared_vol("stackbox-ovs-run")],
             health_check=HealthCheck(
@@ -260,7 +269,7 @@ def build_container_specs(
     if "openvswitch-vswitchd" in needed:
         specs.append(ContainerSpec(
             name=_name("openvswitch-vswitchd"),
-            image=_kolla("openvswitch-vswitchd", release),
+            image=_image_for("openvswitch-vswitchd", release, image_overrides),
             privileged=True,
             volumes=[
                 _shared_vol("stackbox-ovs-run"),
@@ -271,7 +280,7 @@ def build_container_specs(
     if "nova-libvirt" in needed:
         specs.append(ContainerSpec(
             name=_name("nova-libvirt"),
-            image=_kolla("nova-libvirt", release),
+            image=_image_for("nova-libvirt", release, image_overrides),
             privileged=True,
             volumes=[
                 _config_vol(configs_dir, "libvirtd.conf", "/etc/libvirt/libvirtd.conf"),
@@ -283,9 +292,12 @@ def build_container_specs(
         ))
 
     if "sushy-tools" in needed:
+        sushy_image = (image_overrides or {}).get(
+            "sushy-tools", f"{METAL3_REGISTRY}/sushy-tools:latest",
+        )
         specs.append(ContainerSpec(
             name=_name("sushy-tools"),
-            image=f"{METAL3_REGISTRY}/sushy-tools:latest",
+            image=sushy_image,
             volumes=[
                 _config_vol(configs_dir, "emulator.conf", "/etc/sushy/emulator.conf"),
                 _shared_vol("stackbox-libvirt-sock"),
@@ -295,16 +307,19 @@ def build_container_specs(
         ))
 
     if "vbmc" in needed:
+        vbmc_image = (image_overrides or {}).get(
+            "vbmc", f"{METAL3_REGISTRY}/vbmc:latest",
+        )
         specs.append(ContainerSpec(
             name=_name("vbmc"),
-            image=f"{METAL3_REGISTRY}/vbmc:latest",
+            image=vbmc_image,
             volumes=[_shared_vol("stackbox-libvirt-sock")],
         ))
 
     if "swift-proxy-server" in needed:
         specs.append(ContainerSpec(
             name=_name("swift-proxy-server"),
-            image=_kolla("swift-proxy-server", release),
+            image=_image_for("swift-proxy-server", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "proxy-server.conf", "/etc/swift/proxy-server.conf"),
             ],
@@ -334,7 +349,7 @@ def build_container_specs(
                 )
             specs.append(ContainerSpec(
                 name=_name(cinder_svc),
-                image=_kolla(cinder_svc, release),
+                image=_image_for(cinder_svc, release, image_overrides),
                 privileged=priv,
                 volumes=vols,
                 health_check=hc,
@@ -343,21 +358,21 @@ def build_container_specs(
     if "tgtd" in needed:
         specs.append(ContainerSpec(
             name=_name("tgtd"),
-            image=_kolla("tgtd", release),
+            image=_image_for("tgtd", release, image_overrides),
             privileged=True,
         ))
 
     if "ironic-pxe" in needed:
         specs.append(ContainerSpec(
             name=_name("ironic-pxe"),
-            image=_kolla("ironic-pxe", release),
+            image=_image_for("ironic-pxe", release, image_overrides),
             volumes=[_shared_vol("stackbox-ironic-httpboot")],
         ))
 
     if "dnsmasq" in needed:
         specs.append(ContainerSpec(
             name=_name("dnsmasq"),
-            image=_kolla("dnsmasq", release),
+            image=_image_for("dnsmasq", release, image_overrides),
             privileged=True,
             volumes=[
                 _config_vol(configs_dir, "dnsmasq.conf", "/etc/dnsmasq.conf"),
