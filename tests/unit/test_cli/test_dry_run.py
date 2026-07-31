@@ -30,7 +30,7 @@ def pxe_config():
     )
 
 
-def _capture_output(config, release="master-ubuntu-noble", local_repos=None):
+def _capture_output(config, release="2025.1-ubuntu-noble", local_repos=None):
     buf = StringIO()
     console = Console(file=buf, force_terminal=True, width=200)
     _print_dry_run(console, config, release, local_repos=local_repos)

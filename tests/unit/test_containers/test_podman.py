@@ -126,7 +126,17 @@ class TestPodmanBackend:
 
     def test_create_volume(self, backend):
         with patch("subprocess.run") as mock_run:
+            exists_result = MagicMock(returncode=1, stdout="", stderr="")
+            create_result = MagicMock(returncode=0, stdout="", stderr="")
+            mock_run.side_effect = [exists_result, create_result]
+            backend.create_volume("testvol")
+            assert mock_run.call_count == 2
+            assert mock_run.call_args_list[0][0][0] == ["podman", "volume", "exists", "testvol"]
+            assert mock_run.call_args_list[1][0][0] == ["podman", "volume", "create", "testvol"]
+
+    def test_create_volume_already_exists(self, backend):
+        with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             backend.create_volume("testvol")
-            cmd = mock_run.call_args[0][0]
-            assert cmd == ["podman", "volume", "create", "testvol"]
+            mock_run.assert_called_once()
+            assert mock_run.call_args[0][0] == ["podman", "volume", "exists", "testvol"]

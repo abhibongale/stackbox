@@ -33,6 +33,9 @@ class PodmanBackend(ContainerBackend):
         return result
 
     def run(self, spec: ContainerSpec) -> str:
+        self._run_cmd(
+            ["podman", "rm", "-f", spec.name], check=False
+        )
         cmd = [
             "podman", "run", "-d",
             "--name", spec.name,
@@ -140,6 +143,12 @@ class PodmanBackend(ContainerBackend):
         self._run_cmd(cmd, timeout=1800)
 
     def create_volume(self, name: str) -> None:
+        result = self._run_cmd(
+            ["podman", "volume", "exists", name], check=False
+        )
+        if result.returncode == 0:
+            log.debug("Volume %s already exists, reusing", name)
+            return
         self._run_cmd(["podman", "volume", "create", name])
 
     def remove_volume(self, name: str) -> None:

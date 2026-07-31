@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from stackbox.config_gen.ports import PortManager
-from stackbox.constants import CONTAINER_PREFIX, KOLLA_IMAGES, KOLLA_REGISTRY, METAL3_REGISTRY
+from stackbox.constants import (
+    CONTAINER_PREFIX, KOLLA_IMAGES, KOLLA_REGISTRY, KOLLA_SERVICE_COMMANDS, METAL3_REGISTRY,
+)
 from stackbox.models.container import ContainerSpec, HealthCheck, VolumeMount
 from stackbox.models.job_config import ResolvedJobConfig
 
 SHARED_VOLUMES = {
+    "stackbox-mariadb-data": "/var/lib/mysql/",
+    "stackbox-keystone-fernet": "/etc/keystone/fernet-keys/",
+    "stackbox-keystone-credential": "/etc/keystone/credential-keys/",
     "stackbox-libvirt-sock": "/var/run/libvirt/",
     "stackbox-libvirt-images": "/var/lib/libvirt/images/",
     "stackbox-ovs-run": "/var/run/openvswitch/",
@@ -42,6 +48,18 @@ def _config_vol(configs_dir: Path, filename: str, target: str) -> VolumeMount:
 
 def _shared_vol(vol_name: str) -> VolumeMount:
     return _vol(vol_name, SHARED_VOLUMES[vol_name])
+
+
+def _kolla_config_vol(configs_dir: Path, service: str, command: str) -> VolumeMount:
+    kolla_dir = configs_dir / "kolla"
+    kolla_dir.mkdir(parents=True, exist_ok=True)
+    config_path = kolla_dir / f"{service}.json"
+    config_path.write_text(json.dumps({"command": command, "config_files": []}))
+    return VolumeMount(
+        source=str(config_path),
+        target="/var/lib/kolla/config_files/config.json",
+        options="ro,z",
+    )
 
 
 def required_containers(job: ResolvedJobConfig) -> set[str]:
@@ -89,9 +107,11 @@ def build_container_specs(
             name=_name("mariadb"),
             image=_image_for("mariadb", release, image_overrides),
             volumes=[
-                _config_vol(configs_dir, "init.sql", "/docker-entrypoint-initdb.d/init.sql"),
+                _config_vol(configs_dir, "init.sql", "/opt/stackbox/init.sql"),
+                _kolla_config_vol(configs_dir, "mariadb", KOLLA_SERVICE_COMMANDS["mariadb"]),
+                _vol("stackbox-mariadb-data", "/var/lib/mysql"),
             ],
-            environment={"MARIADB_ROOT_PASSWORD": "stackbox"},
+            environment={"DB_ROOT_PASSWORD": "stackbox"},
             health_check=HealthCheck(
                 type="tcp", target=str(port_manager.get("mariadb")), timeout_seconds=60,
             ),
@@ -104,6 +124,7 @@ def build_container_specs(
             volumes=[
                 _config_vol(configs_dir, "rabbitmq.conf", "/etc/rabbitmq/rabbitmq.conf"),
                 _config_vol(configs_dir, "definitions.json", "/etc/rabbitmq/definitions.json"),
+                _kolla_config_vol(configs_dir, "rabbitmq", KOLLA_SERVICE_COMMANDS["rabbitmq"]),
             ],
             health_check=HealthCheck(
                 type="tcp", target=str(port_manager.get("rabbitmq")), timeout_seconds=60,
@@ -114,18 +135,27 @@ def build_container_specs(
         specs.append(ContainerSpec(
             name=_name("memcached"),
             image=_image_for("memcached", release, image_overrides),
+            volumes=[
+                _kolla_config_vol(configs_dir, "memcached", KOLLA_SERVICE_COMMANDS["memcached"]),
+            ],
             health_check=HealthCheck(
                 type="tcp", target=str(port_manager.get("memcached")), timeout_seconds=30,
             ),
         ))
 
     if "keystone" in needed:
+        ks_port = port_manager.get("keystone")
+        ks_cmd = f"uwsgi --http :{ks_port} --wsgi-file /var/lib/kolla/venv/bin/keystone-wsgi-public --master --processes 2"
         specs.append(ContainerSpec(
             name=_name("keystone"),
             image=_image_for("keystone", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "keystone.conf", "/etc/keystone/keystone.conf"),
+                _kolla_config_vol(configs_dir, "keystone", ks_cmd),
+                _vol("stackbox-keystone-fernet", "/etc/keystone/fernet-keys/"),
+                _vol("stackbox-keystone-credential", "/etc/keystone/credential-keys/"),
             ],
+            environment={"KOLLA_SKIP_EXTEND_START": ""},
             health_check=HealthCheck(
                 type="http",
                 target=f"http://localhost:{port_manager.get('keystone')}/v3",
@@ -140,6 +170,7 @@ def build_container_specs(
             volumes=[
                 _config_vol(configs_dir, "glance-api.conf", "/etc/glance/glance-api.conf"),
                 _shared_vol("stackbox-ironic-httpboot"),
+                _kolla_config_vol(configs_dir, "glance-api", KOLLA_SERVICE_COMMANDS["glance-api"]),
             ],
             health_check=HealthCheck(
                 type="http",
@@ -149,12 +180,16 @@ def build_container_specs(
         ))
 
     if "placement-api" in needed:
+        pl_port = port_manager.get("placement")
+        pl_cmd = f"uwsgi --http :{pl_port} --wsgi-file /var/lib/kolla/venv/bin/placement-api --master --processes 2"
         specs.append(ContainerSpec(
             name=_name("placement-api"),
             image=_image_for("placement-api", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "placement.conf", "/etc/placement/placement.conf"),
+                _kolla_config_vol(configs_dir, "placement-api", pl_cmd),
             ],
+            environment={"KOLLA_SKIP_EXTEND_START": ""},
             health_check=HealthCheck(
                 type="http",
                 target=f"http://localhost:{port_manager.get('placement')}",
@@ -169,6 +204,7 @@ def build_container_specs(
             volumes=[
                 _config_vol(configs_dir, "neutron.conf", "/etc/neutron/neutron.conf"),
                 _config_vol(configs_dir, "ml2_conf.ini", "/etc/neutron/plugins/ml2/ml2_conf.ini"),
+                _kolla_config_vol(configs_dir, "neutron-server", KOLLA_SERVICE_COMMANDS["neutron-server"]),
             ],
             health_check=HealthCheck(
                 type="http",
@@ -195,6 +231,7 @@ def build_container_specs(
                 _config_vol(configs_dir, "neutron.conf", "/etc/neutron/neutron.conf"),
                 _config_vol(configs_dir, "ml2_conf.ini", "/etc/neutron/plugins/ml2/ml2_conf.ini"),
                 _shared_vol("stackbox-ovs-run"),
+                _kolla_config_vol(configs_dir, agent, KOLLA_SERVICE_COMMANDS[agent]),
             ] + _neutron_agent_configs.get(agent, [])
             specs.append(ContainerSpec(
                 name=_name(agent),
@@ -217,6 +254,7 @@ def build_container_specs(
                 image=_image_for(svc, release, image_overrides),
                 volumes=[
                     _config_vol(configs_dir, "nova.conf", "/etc/nova/nova.conf"),
+                    _kolla_config_vol(configs_dir, svc, KOLLA_SERVICE_COMMANDS[svc]),
                 ],
                 health_check=hc,
             ))
@@ -228,6 +266,7 @@ def build_container_specs(
             volumes=[
                 _config_vol(configs_dir, "nova.conf", "/etc/nova/nova.conf"),
                 _shared_vol("stackbox-libvirt-sock"),
+                _kolla_config_vol(configs_dir, "nova-compute", KOLLA_SERVICE_COMMANDS["nova-compute"]),
             ],
         ))
 
@@ -237,6 +276,7 @@ def build_container_specs(
             image=_image_for("ironic-api", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "ironic.conf", "/etc/ironic/ironic.conf"),
+                _kolla_config_vol(configs_dir, "ironic-api", KOLLA_SERVICE_COMMANDS["ironic-api"]),
             ],
             health_check=HealthCheck(
                 type="http",
@@ -252,6 +292,7 @@ def build_container_specs(
             volumes=[
                 _config_vol(configs_dir, "ironic.conf", "/etc/ironic/ironic.conf"),
                 _shared_vol("stackbox-ironic-httpboot"),
+                _kolla_config_vol(configs_dir, "ironic-conductor", KOLLA_SERVICE_COMMANDS["ironic-conductor"]),
             ],
         ))
 
@@ -260,7 +301,10 @@ def build_container_specs(
             name=_name("openvswitch-db-server"),
             image=_image_for("openvswitch-db-server", release, image_overrides),
             privileged=True,
-            volumes=[_shared_vol("stackbox-ovs-run")],
+            volumes=[
+                _shared_vol("stackbox-ovs-run"),
+                _kolla_config_vol(configs_dir, "openvswitch-db-server", KOLLA_SERVICE_COMMANDS["openvswitch-db-server"]),
+            ],
             health_check=HealthCheck(
                 type="tcp", target=str(port_manager.get("ovs")), timeout_seconds=30,
             ),
@@ -274,6 +318,7 @@ def build_container_specs(
             volumes=[
                 _shared_vol("stackbox-ovs-run"),
                 _vol("/lib/modules", "/lib/modules", "ro"),
+                _kolla_config_vol(configs_dir, "openvswitch-vswitchd", KOLLA_SERVICE_COMMANDS["openvswitch-vswitchd"]),
             ],
         ))
 
@@ -288,6 +333,7 @@ def build_container_specs(
                 _shared_vol("stackbox-libvirt-sock"),
                 _shared_vol("stackbox-libvirt-images"),
                 _vol("/dev/kvm", "/dev/kvm"),
+                _kolla_config_vol(configs_dir, "nova-libvirt", KOLLA_SERVICE_COMMANDS["nova-libvirt"]),
             ],
         ))
 
@@ -322,6 +368,7 @@ def build_container_specs(
             image=_image_for("swift-proxy-server", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "proxy-server.conf", "/etc/swift/proxy-server.conf"),
+                _kolla_config_vol(configs_dir, "swift-proxy-server", KOLLA_SERVICE_COMMANDS["swift-proxy-server"]),
             ],
             health_check=HealthCheck(
                 type="http",
@@ -332,7 +379,10 @@ def build_container_specs(
 
     for cinder_svc in ("cinder-api", "cinder-scheduler", "cinder-volume"):
         if cinder_svc in needed:
-            vols = [_config_vol(configs_dir, "cinder.conf", "/etc/cinder/cinder.conf")]
+            vols = [
+                _config_vol(configs_dir, "cinder.conf", "/etc/cinder/cinder.conf"),
+                _kolla_config_vol(configs_dir, cinder_svc, KOLLA_SERVICE_COMMANDS[cinder_svc]),
+            ]
             priv = cinder_svc == "cinder-volume"
             if priv:
                 vols.extend([
@@ -360,13 +410,19 @@ def build_container_specs(
             name=_name("tgtd"),
             image=_image_for("tgtd", release, image_overrides),
             privileged=True,
+            volumes=[
+                _kolla_config_vol(configs_dir, "tgtd", KOLLA_SERVICE_COMMANDS["tgtd"]),
+            ],
         ))
 
     if "ironic-pxe" in needed:
         specs.append(ContainerSpec(
             name=_name("ironic-pxe"),
             image=_image_for("ironic-pxe", release, image_overrides),
-            volumes=[_shared_vol("stackbox-ironic-httpboot")],
+            volumes=[
+                _shared_vol("stackbox-ironic-httpboot"),
+                _kolla_config_vol(configs_dir, "ironic-pxe", KOLLA_SERVICE_COMMANDS["ironic-pxe"]),
+            ],
         ))
 
     if "dnsmasq" in needed:
@@ -376,7 +432,13 @@ def build_container_specs(
             privileged=True,
             volumes=[
                 _config_vol(configs_dir, "dnsmasq.conf", "/etc/dnsmasq.conf"),
+                _kolla_config_vol(configs_dir, "dnsmasq", KOLLA_SERVICE_COMMANDS["dnsmasq"]),
             ],
         ))
+
+    kolla_config_target = "/var/lib/kolla/config_files/config.json"
+    for spec in specs:
+        if any(v.target == kolla_config_target for v in spec.volumes):
+            spec.environment.setdefault("KOLLA_CONFIG_STRATEGY", "COPY_ALWAYS")
 
     return specs

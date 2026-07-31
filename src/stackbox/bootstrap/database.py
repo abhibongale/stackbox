@@ -22,4 +22,12 @@ def init_database(backend: ContainerBackend, port: int) -> None:
     if exit_code != 0:
         raise BootstrapError(f"MariaDB not responding: {output}")
 
-    log.info("MariaDB ready, init.sql applied via entrypoint initdb")
+    log.info("Running init.sql...")
+    exit_code, output = backend.exec(
+        CONTAINER,
+        ["bash", "-c", "mysql -u root -pstackbox < /opt/stackbox/init.sql"],
+    )
+    if exit_code != 0:
+        raise BootstrapError(f"init.sql failed: {output}")
+
+    log.info("Database initialization complete")

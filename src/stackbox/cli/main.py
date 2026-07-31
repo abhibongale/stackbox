@@ -41,8 +41,7 @@ def _print_dry_run(console, config, release, local_repos=None):
         tmp_path = Path(tmp)
         pipeline = ConfigPipeline()
         generated = pipeline.generate_all(config, tmp_path)
-
-    specs = build_container_specs(config, Path("/etc/stackbox/configs"), pm, release)
+        specs = build_container_specs(config, tmp_path, pm, release)
 
     console.print()
     console.print(Panel("[bold]STACKBOX Dry Run[/bold]", style="cyan"))

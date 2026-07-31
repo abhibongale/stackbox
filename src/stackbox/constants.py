@@ -4,7 +4,7 @@ ZUUL_TENANT = "openstack"
 KOLLA_REGISTRY = "quay.io/openstack.kolla"
 METAL3_REGISTRY = "quay.io/metal3-io"
 
-DEFAULT_RELEASE = "master-ubuntu-noble"
+DEFAULT_RELEASE = "2025.1-ubuntu-noble"
 
 BASE_PORTS = {
     "mariadb": 3306,
@@ -30,7 +30,7 @@ BASE_PORTS = {
 CONTAINER_PREFIX = "stackbox"
 
 KOLLA_IMAGES = {
-    "mariadb": "mariadb",
+    "mariadb": "mariadb-server",
     "rabbitmq": "rabbitmq",
     "memcached": "memcached",
     "keystone": "keystone",
@@ -65,6 +65,33 @@ KOLLA_IMAGES = {
 METAL3_IMAGES = {
     "sushy-tools": "sushy-tools",
     "vbmc": "vbmc",
+}
+
+KOLLA_SERVICE_COMMANDS = {
+    "mariadb": "/usr/sbin/mariadbd",
+    "rabbitmq": "/usr/sbin/rabbitmq-server",
+    "memcached": "/usr/bin/memcached -u memcache",
+    "glance-api": "glance-api",
+    "neutron-server": "neutron-server --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini",
+    "neutron-dhcp-agent": "neutron-dhcp-agent --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/dhcp_agent.ini",
+    "neutron-l3-agent": "neutron-l3-agent --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/l3_agent.ini",
+    "neutron-openvswitch-agent": "neutron-openvswitch-agent --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/openvswitch_agent.ini",
+    "nova-api": "nova-api",
+    "nova-scheduler": "nova-scheduler",
+    "nova-conductor": "nova-conductor",
+    "nova-compute": "nova-compute",
+    "ironic-api": "ironic-api --config-file /etc/ironic/ironic.conf",
+    "ironic-conductor": "ironic-conductor --config-file /etc/ironic/ironic.conf",
+    "openvswitch-db-server": "ovsdb-server /etc/openvswitch/conf.db --remote=punix:/run/openvswitch/db.sock --remote=ptcp:6640",
+    "openvswitch-vswitchd": "ovs-vswitchd unix:/run/openvswitch/db.sock",
+    "nova-libvirt": "libvirtd --listen",
+    "swift-proxy-server": "swift-proxy-server /etc/swift/proxy-server.conf",
+    "cinder-api": "cinder-api --config-file /etc/cinder/cinder.conf",
+    "cinder-scheduler": "cinder-scheduler --config-file /etc/cinder/cinder.conf",
+    "cinder-volume": "cinder-volume --config-file /etc/cinder/cinder.conf",
+    "tgtd": "tgtd -f",
+    "ironic-pxe": "in.tftpd -L --address 0.0.0.0:69 -s /tftpboot",
+    "dnsmasq": "dnsmasq -k --conf-file=/etc/dnsmasq.conf",
 }
 
 OPENDEV_GIT_BASE = "https://opendev.org"

@@ -12,7 +12,6 @@ log = logging.getLogger(__name__)
 CONTAINER = "stackbox-keystone"
 
 CORE_SERVICES = [
-    ("keystone", "identity", "keystone"),
     ("nova", "compute", "nova-api"),
     ("glance", "image", "glance"),
     ("neutron", "network", "neutron"),
@@ -30,6 +29,7 @@ def _exec_or_fail(backend: ContainerBackend, cmd: list[str], desc: str) -> None:
     exit_code, output = backend.exec(CONTAINER, cmd)
     if exit_code != 0:
         raise BootstrapError(f"{desc} failed: {output}")
+
 
 
 def _os_env(admin_pass: str, port: int) -> list[str]:
@@ -70,7 +70,7 @@ def register_services(
 
         _exec_or_fail(
             backend,
-            env + ["openstack", "service", "create", "--or-show", "--name", name, svc_type],
+            env + ["openstack", "service", "create", "--name", name, svc_type],
             f"create service {name}",
         )
 

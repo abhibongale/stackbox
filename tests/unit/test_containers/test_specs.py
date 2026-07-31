@@ -73,7 +73,7 @@ class TestBuildContainerSpecs:
 
     def test_builds_specs_for_vmedia(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         names = {s.name for s in specs}
         assert "stackbox-mariadb" in names
         assert "stackbox-keystone" in names
@@ -82,14 +82,14 @@ class TestBuildContainerSpecs:
 
     def test_mariadb_has_init_sql_volume(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         mariadb = next(s for s in specs if s.name == "stackbox-mariadb")
         vol_targets = [v.target for v in mariadb.volumes]
-        assert "/docker-entrypoint-initdb.d/init.sql" in vol_targets
+        assert "/opt/stackbox/init.sql" in vol_targets
 
     def test_keystone_has_health_check(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         ks = next(s for s in specs if s.name == "stackbox-keystone")
         assert ks.health_check is not None
         assert ks.health_check.type == "http"
@@ -97,26 +97,26 @@ class TestBuildContainerSpecs:
 
     def test_ovs_is_privileged(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         ovs = next(s for s in specs if s.name == "stackbox-openvswitch-db-server")
         assert ovs.privileged is True
 
     def test_port_offset_in_health_checks(self, tmp_path):
         job = ResolvedJobConfig(job_name="test", port_offset=10000)
         pm = PortManager(offset=10000)
-        specs = build_container_specs(job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(job, tmp_path, pm, "2025.1-ubuntu-noble")
         mariadb = next(s for s in specs if s.name == "stackbox-mariadb")
         assert mariadb.health_check.target == "13306"
 
     def test_no_cinder_specs_when_disabled(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         names = {s.name for s in specs}
         assert "stackbox-cinder-api" not in names
 
     def test_neutron_dhcp_agent_has_agent_config(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         dhcp = next(s for s in specs if s.name == "stackbox-neutron-dhcp-agent")
         vol_targets = [v.target for v in dhcp.volumes]
         assert "/etc/neutron/dhcp_agent.ini" in vol_targets
@@ -124,21 +124,21 @@ class TestBuildContainerSpecs:
 
     def test_neutron_l3_agent_has_agent_config(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         l3 = next(s for s in specs if s.name == "stackbox-neutron-l3-agent")
         vol_targets = [v.target for v in l3.volumes]
         assert "/etc/neutron/l3_agent.ini" in vol_targets
 
     def test_neutron_ovs_agent_has_agent_config(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         ovs = next(s for s in specs if s.name == "stackbox-neutron-openvswitch-agent")
         vol_targets = [v.target for v in ovs.volumes]
         assert "/etc/neutron/plugins/ml2/openvswitch_agent.ini" in vol_targets
 
     def test_nova_libvirt_has_libvirt_configs(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         libvirt = next(s for s in specs if s.name == "stackbox-nova-libvirt")
         vol_targets = [v.target for v in libvirt.volumes]
         assert "/etc/libvirt/libvirtd.conf" in vol_targets
@@ -146,7 +146,7 @@ class TestBuildContainerSpecs:
 
     def test_nova_compute_has_libvirt_socket(self, vmedia_job, tmp_path):
         pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         compute = next(s for s in specs if s.name == "stackbox-nova-compute")
         vol_targets = [v.target for v in compute.volumes]
         assert "/var/run/libvirt/" in vol_targets
@@ -156,7 +156,7 @@ class TestBuildContainerSpecs:
         pm = PortManager()
         overrides = {"ironic-api": "my-custom-ironic:dev"}
         specs = build_container_specs(
-            job, tmp_path, pm, "master-ubuntu-noble", image_overrides=overrides,
+            job, tmp_path, pm, "2025.1-ubuntu-noble", image_overrides=overrides,
         )
         ironic = next(s for s in specs if s.name == "stackbox-ironic-api")
         assert ironic.image == "my-custom-ironic:dev"
@@ -166,7 +166,7 @@ class TestBuildContainerSpecs:
         pm = PortManager()
         overrides = {"ironic-api": "my-custom-ironic:dev"}
         specs = build_container_specs(
-            job, tmp_path, pm, "master-ubuntu-noble", image_overrides=overrides,
+            job, tmp_path, pm, "2025.1-ubuntu-noble", image_overrides=overrides,
         )
         mariadb = next(s for s in specs if s.name == "stackbox-mariadb")
         assert "kolla" in mariadb.image
@@ -176,7 +176,7 @@ class TestBuildContainerSpecs:
         pm = PortManager()
         overrides = {"sushy-tools": "my-sushy:custom"}
         specs = build_container_specs(
-            job, tmp_path, pm, "master-ubuntu-noble", image_overrides=overrides,
+            job, tmp_path, pm, "2025.1-ubuntu-noble", image_overrides=overrides,
         )
         sushy = next(s for s in specs if s.name == "stackbox-sushy-tools")
         assert sushy.image == "my-sushy:custom"
@@ -184,6 +184,55 @@ class TestBuildContainerSpecs:
     def test_no_overrides_uses_defaults(self, tmp_path):
         job = ResolvedJobConfig(job_name="test")
         pm = PortManager()
-        specs = build_container_specs(job, tmp_path, pm, "master-ubuntu-noble")
+        specs = build_container_specs(job, tmp_path, pm, "2025.1-ubuntu-noble")
         ironic = next(s for s in specs if s.name == "stackbox-ironic-api")
         assert "kolla" in ironic.image
+
+    def test_kolla_config_json_generated(self, tmp_path):
+        job = ResolvedJobConfig(job_name="test")
+        pm = PortManager()
+        build_container_specs(job, tmp_path, pm, "2025.1-ubuntu-noble")
+        kolla_dir = tmp_path / "kolla"
+        assert kolla_dir.exists()
+        mariadb_json = kolla_dir / "mariadb.json"
+        assert mariadb_json.exists()
+        data = json.loads(mariadb_json.read_text())
+        assert data["command"] == "/usr/sbin/mariadbd"
+        assert data["config_files"] == []
+
+    def test_all_kolla_containers_have_config_json(self, vmedia_job, tmp_path):
+        pm = PortManager()
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
+        kolla_config_target = "/var/lib/kolla/config_files/config.json"
+        for spec in specs:
+            if "sushy-tools" in spec.name or "vbmc" in spec.name:
+                continue
+            vol_targets = [v.target for v in spec.volumes]
+            assert kolla_config_target in vol_targets, (
+                f"{spec.name} missing kolla config.json volume"
+            )
+
+    def test_mariadb_uses_db_root_password(self, vmedia_job, tmp_path):
+        pm = PortManager()
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
+        mariadb = next(s for s in specs if s.name == "stackbox-mariadb")
+        assert "DB_ROOT_PASSWORD" in mariadb.environment
+        assert "MARIADB_ROOT_PASSWORD" not in mariadb.environment
+
+    def test_keystone_uwsgi_command_uses_port(self, tmp_path):
+        job = ResolvedJobConfig(job_name="test")
+        pm = PortManager()
+        build_container_specs(job, tmp_path, pm, "2025.1-ubuntu-noble")
+        ks_json = tmp_path / "kolla" / "keystone.json"
+        data = json.loads(ks_json.read_text())
+        assert "uwsgi" in data["command"]
+        assert str(pm.get("keystone")) in data["command"]
+
+    def test_placement_uwsgi_command_uses_port(self, tmp_path):
+        job = ResolvedJobConfig(job_name="test")
+        pm = PortManager()
+        build_container_specs(job, tmp_path, pm, "2025.1-ubuntu-noble")
+        pl_json = tmp_path / "kolla" / "placement-api.json"
+        data = json.loads(pl_json.read_text())
+        assert "uwsgi" in data["command"]
+        assert str(pm.get("placement")) in data["command"]

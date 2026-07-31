@@ -13,6 +13,11 @@ SERVICES_WITH_DB = [
     "ironic",
 ]
 
+DB_OWNER_OVERRIDES = {
+    "nova_api": "nova",
+    "nova_cell0": "nova",
+}
+
 CONDITIONAL_DBS = {
     "cinder": lambda job: job.devstack_services.get("c-api", False),
 }
@@ -33,9 +38,11 @@ class MariaDBConfigGenerator(ServiceConfigGenerator):
                 all_dbs.append(db_name)
 
         for db in all_dbs:
-            lines.append(f"CREATE DATABASE IF NOT EXISTS `{db}` CHARACTER SET utf8mb4;")
+            user = DB_OWNER_OVERRIDES.get(db, db)
+            lines.append(f"DROP DATABASE IF EXISTS `{db}`;")
+            lines.append(f"CREATE DATABASE `{db}` CHARACTER SET utf8mb4;")
             lines.append(
-                f"GRANT ALL PRIVILEGES ON `{db}`.* TO '{db}'@'%'"
+                f"GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'%'"
                 f" IDENTIFIED BY '{db_pass}';"
             )
             lines.append("")

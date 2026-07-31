@@ -9,22 +9,22 @@ from stackbox.constants import KOLLA_REGISTRY, METAL3_REGISTRY
 @pytest.fixture
 def img_mgr():
     backend = MagicMock()
-    return ImageManager(backend=backend, release="master-ubuntu-noble")
+    return ImageManager(backend=backend, release="2025.1-ubuntu-noble")
 
 
 class TestImageManager:
 
     def test_kolla_image_known(self, img_mgr):
         result = img_mgr.kolla_image("keystone")
-        assert result == f"{KOLLA_REGISTRY}/keystone:master-ubuntu-noble"
+        assert result == f"{KOLLA_REGISTRY}/keystone:2025.1-ubuntu-noble"
 
     def test_kolla_image_nova_compute(self, img_mgr):
         result = img_mgr.kolla_image("nova-compute")
-        assert result == f"{KOLLA_REGISTRY}/nova-compute-ironic:master-ubuntu-noble"
+        assert result == f"{KOLLA_REGISTRY}/nova-compute-ironic:2025.1-ubuntu-noble"
 
     def test_kolla_image_unknown_fallback(self, img_mgr):
         result = img_mgr.kolla_image("unknown-service")
-        assert result == f"{KOLLA_REGISTRY}/unknown-service:master-ubuntu-noble"
+        assert result == f"{KOLLA_REGISTRY}/unknown-service:2025.1-ubuntu-noble"
 
     def test_metal3_image(self, img_mgr):
         result = img_mgr.metal3_image("sushy-tools")
@@ -34,10 +34,10 @@ class TestImageManager:
         img_mgr.pull_kolla(["keystone", "glance-api"])
         assert img_mgr.backend.pull_image.call_count == 2
         img_mgr.backend.pull_image.assert_any_call(
-            f"{KOLLA_REGISTRY}/keystone:master-ubuntu-noble"
+            f"{KOLLA_REGISTRY}/keystone:2025.1-ubuntu-noble"
         )
         img_mgr.backend.pull_image.assert_any_call(
-            f"{KOLLA_REGISTRY}/glance-api:master-ubuntu-noble"
+            f"{KOLLA_REGISTRY}/glance-api:2025.1-ubuntu-noble"
         )
 
     def test_pull_metal3(self, img_mgr):

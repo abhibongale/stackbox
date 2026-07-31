@@ -14,6 +14,8 @@ def mock_backend():
     backend.run.return_value = "container-id-123"
     backend.is_running.return_value = False
     backend.exec.return_value = (0, "OK")
+    backend.inspect.return_value = {"State": {"ExitCode": 0}}
+    backend.logs.return_value = ""
     return backend
 
 
@@ -46,8 +48,8 @@ class TestBootstrapOrchestrator:
     def test_create_volumes(self, mock_backend, job, manifest, tmp_path):
         orch = BootstrapOrchestrator(mock_backend, job, tmp_path, manifest)
         orch._create_volumes()
-        assert mock_backend.create_volume.call_count == 4
-        assert len(manifest.volumes) == 4
+        assert mock_backend.create_volume.call_count == 7
+        assert len(manifest.volumes) == 7
 
     @patch("stackbox.bootstrap.orchestrator.init_database")
     @patch("stackbox.bootstrap.orchestrator.check")

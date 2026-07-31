@@ -106,4 +106,4 @@ class TestConfigPipeline:
 
         sql = (tmp_path / "init.sql").read_text()
         for db in ["keystone", "glance", "nova", "neutron", "ironic", "placement"]:
-            assert f"CREATE DATABASE IF NOT EXISTS `{db}`" in sql
+            assert f"CREATE DATABASE `{db}`" in sql

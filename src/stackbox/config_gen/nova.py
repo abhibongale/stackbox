@@ -16,6 +16,13 @@ class NovaConfigGenerator(ServiceConfigGenerator):
             "force_config_drive": lr.get("FORCE_CONFIG_DRIVE", "True"),
         })
 
+        config["api_database"] = {
+            "connection": (
+                f"mysql+pymysql://nova:{self._db_pass()}"
+                f"@localhost:{self.ports.get('mariadb')}/nova_api"
+            ),
+        }
+
         config["api"] = {
             "auth_strategy": "keystone",
         }

@@ -4,12 +4,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
-    gcc libffi-dev libssl-dev libpq-dev && \
+    gcc git libffi-dev libssl-dev libpq-dev && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m venv /opt/stackbox/venv
 ENV PATH="/opt/stackbox/venv/bin:$PATH"
 
 COPY . /opt/stackbox/source
-RUN pip install --no-cache-dir -e /opt/stackbox/source
+ENV PBR_VERSION=0.0.dev0
+RUN pip install --no-cache-dir /opt/stackbox/source
 RUN pip install --no-cache-dir pymysql python-memcached uwsgi
