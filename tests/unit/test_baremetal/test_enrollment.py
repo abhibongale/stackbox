@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from stackbox.baremetal.enrollment import enroll_nodes, _os_env, _wait_for_state
+from stackbox.baremetal.enrollment import enroll_nodes, _os_env, _wait_for_ironic, _wait_for_state
 from stackbox.config_gen.ports import PortManager
 from stackbox.exceptions import BootstrapError
 from stackbox.models.baremetal import BMCConfig, BMCType, VirtualBMNode
@@ -14,13 +14,11 @@ def mock_backend():
 
     def smart_exec(container, cmd):
         cmd_str = " ".join(cmd)
-        if "provision_state" in cmd_str:
-            if "manageable" in cmd_str or any("manage" in c for c in cmd):
-                pass
-            return (0, "available")
+        if "node show" in cmd_str and "provision_state" in cmd_str:
+            return (1, "Not Found")
         return (0, "OK")
 
-    backend.exec.return_value = (0, "OK")
+    backend.exec = MagicMock(side_effect=smart_exec)
     return backend
 
 
@@ -28,6 +26,7 @@ def mock_backend():
 def redfish_node():
     return VirtualBMNode(
         name="stackbox-bm-0",
+        uuid="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
         ram_mb=4096,
         vcpus=2,
         disk_gb=20,
@@ -71,35 +70,75 @@ class TestWaitForState:
             _wait_for_state(backend, env, "node-1", "manageable", timeout=0.1)
 
 
+class TestWaitForIronic:
+    def test_returns_when_conductor_ready(self):
+        backend = MagicMock()
+        backend.exec.return_value = (0, "redfish")
+        env = _os_env("pass", 5000)
+        _wait_for_ironic(backend, env, timeout=5)
+
+    def test_raises_on_timeout_no_response(self):
+        backend = MagicMock()
+        backend.exec.return_value = (1, "503")
+        env = _os_env("pass", 5000)
+        with pytest.raises(BootstrapError, match="not ready"):
+            _wait_for_ironic(backend, env, timeout=0.1)
+
+    def test_raises_on_timeout_no_drivers(self):
+        backend = MagicMock()
+        backend.exec.return_value = (0, "")
+        env = _os_env("pass", 5000)
+        with pytest.raises(BootstrapError, match="not ready"):
+            _wait_for_ironic(backend, env, timeout=0.1)
+
+
 class TestEnrollNodes:
 
+    @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_redfish_enrollment(self, mock_wait, mock_backend, redfish_node):
+    def test_redfish_enrollment(self, mock_wait, mock_wait_ironic, mock_backend, redfish_node):
         pm = PortManager()
         enroll_nodes(mock_backend, [redfish_node], pm, "admin_pass")
 
         calls = mock_backend.exec.call_args_list
-        create_call = calls[0]
-        cmd = create_call[0][1]
-        cmd_str = " ".join(cmd)
-        assert "--driver" in cmd
+        create_calls = [c for c in calls if "node create" in " ".join(c[0][1])]
+        assert len(create_calls) == 1
+        cmd_str = " ".join(create_calls[0][0][1])
         assert "redfish" in cmd_str
         assert "redfish_address" in cmd_str
-        assert "redfish_system_id" in cmd_str
+        assert f"redfish_system_id=/redfish/v1/Systems/{redfish_node.uuid}" in cmd_str
 
+    @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_ipmi_enrollment(self, mock_wait, mock_backend, ipmi_node):
+    def test_redfish_falls_back_to_name_without_uuid(self, mock_wait, mock_wait_ironic, mock_backend):
+        node = VirtualBMNode(
+            name="stackbox-bm-0",
+            mac_address="52:54:00:aa:bb:cc",
+            bmc=BMCConfig(type=BMCType.REDFISH, port=9132),
+        )
+        pm = PortManager()
+        enroll_nodes(mock_backend, [node], pm, "admin_pass")
+
+        calls = mock_backend.exec.call_args_list
+        create_calls = [c for c in calls if "node create" in " ".join(c[0][1])]
+        cmd_str = " ".join(create_calls[0][0][1])
+        assert f"redfish_system_id=/redfish/v1/Systems/{node.name}" in cmd_str
+
+    @patch("stackbox.baremetal.enrollment._wait_for_ironic")
+    @patch("stackbox.baremetal.enrollment._wait_for_state")
+    def test_ipmi_enrollment(self, mock_wait, mock_wait_ironic, mock_backend, ipmi_node):
         pm = PortManager()
         enroll_nodes(mock_backend, [ipmi_node], pm, "admin_pass")
 
         calls = mock_backend.exec.call_args_list
-        cmd = calls[0][0][1]
-        cmd_str = " ".join(cmd)
+        create_calls = [c for c in calls if "node create" in " ".join(c[0][1])]
+        cmd_str = " ".join(create_calls[0][0][1])
         assert "ipmi" in cmd_str
         assert "ipmi_address" in cmd_str
 
+    @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_creates_port(self, mock_wait, mock_backend, redfish_node):
+    def test_creates_port(self, mock_wait, mock_wait_ironic, mock_backend, redfish_node):
         pm = PortManager()
         enroll_nodes(mock_backend, [redfish_node], pm, "admin_pass")
 
@@ -108,8 +147,9 @@ class TestEnrollNodes:
         assert len(port_calls) == 1
         assert "52:54:00:aa:bb:cc" in " ".join(port_calls[0][0][1])
 
+    @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_manage_and_provide(self, mock_wait, mock_backend, redfish_node):
+    def test_manage_and_provide(self, mock_wait, mock_wait_ironic, mock_backend, redfish_node):
         pm = PortManager()
         enroll_nodes(mock_backend, [redfish_node], pm, "admin_pass")
 
@@ -119,14 +159,24 @@ class TestEnrollNodes:
         assert any("node provide" in cmd for cmd in all_cmds)
         assert mock_wait.call_count == 2
 
-    def test_raises_on_create_failure(self, mock_backend, redfish_node):
+    @patch("stackbox.baremetal.enrollment._wait_for_ironic")
+    def test_raises_on_create_failure(self, mock_wait_ironic, mock_backend, redfish_node):
         pm = PortManager()
-        mock_backend.exec.return_value = (1, "create failed")
+        call_count = [0]
+
+        def fail_on_create(container, cmd):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return (1, "Not Found")
+            return (1, "create failed")
+
+        mock_backend.exec.side_effect = fail_on_create
         with pytest.raises(BootstrapError, match="create node"):
             enroll_nodes(mock_backend, [redfish_node], pm, "admin_pass")
 
+    @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_multiple_nodes(self, mock_wait, mock_backend):
+    def test_multiple_nodes(self, mock_wait, mock_wait_ironic, mock_backend):
         pm = PortManager()
         nodes = [
             VirtualBMNode(name=f"stackbox-bm-{i}", mac_address=f"52:54:00:aa:bb:{i:02x}")

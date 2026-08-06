@@ -18,6 +18,7 @@ class BMCConfig(BaseModel):
 
 class VirtualBMNode(BaseModel):
     name: str
+    uuid: str | None = None
     ram_mb: int = 3072
     vcpus: int = 1
     disk_gb: int = 10

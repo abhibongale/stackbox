@@ -322,7 +322,7 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
                 runner = TempestRunner(backend, manifest)
                 results_dir = session_dir / "results"
 
-                tempest_image = "stackbox-tempest:local"
+                tempest_image = "localhost/stackbox-tempest:latest"
                 plugin_source = local_repos.get("ironic-tempest-plugin")
                 if plugin_source:
                     from stackbox.containers.images import CONTAINERFILES_DIR, ImageManager
@@ -450,7 +450,7 @@ def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, r
 
                 runner = TempestRunner(backend, manifest)
 
-                tempest_image = "stackbox-tempest:local"
+                tempest_image = "localhost/stackbox-tempest:latest"
                 plugin_source = local_repos.get("ironic-tempest-plugin")
                 if plugin_source:
                     from stackbox.containers.images import CONTAINERFILES_DIR, ImageManager

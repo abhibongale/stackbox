@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
 from pathlib import Path
 
 from stackbox.config_gen.ports import PortManager
 from stackbox.constants import (
-    CONTAINER_PREFIX, KOLLA_IMAGES, KOLLA_REGISTRY, KOLLA_SERVICE_COMMANDS, METAL3_REGISTRY,
+    CONTAINER_PREFIX, KOLLA_IMAGES, KOLLA_REGISTRY, KOLLA_RELEASE_OVERRIDES,
+    KOLLA_SERVICE_COMMANDS, METAL3_REGISTRY,
 )
 from stackbox.models.container import ContainerSpec, HealthCheck, VolumeMount
 from stackbox.models.job_config import ResolvedJobConfig
@@ -27,7 +30,8 @@ def _name(service: str) -> str:
 
 def _kolla(service: str, release: str) -> str:
     image_name = KOLLA_IMAGES.get(service, service)
-    return f"{KOLLA_REGISTRY}/{image_name}:{release}"
+    tag = KOLLA_RELEASE_OVERRIDES.get(service, release)
+    return f"{KOLLA_REGISTRY}/{image_name}:{tag}"
 
 
 def _image_for(
@@ -80,8 +84,9 @@ def required_containers(job: ResolvedJobConfig) -> set[str]:
     elif job.bmc_driver == "ipmi":
         containers.add("vbmc")
 
-    if job.devstack_services.get("s-proxy", False):
-        containers.add("swift-proxy-server")
+    # swift-proxy-server requires a full swift stack (account, container,
+    # object servers + ring files) — not yet implemented; glance uses the
+    # file backend instead.
 
     if job.devstack_services.get("c-api", False):
         containers.update({"cinder-api", "cinder-scheduler", "cinder-volume", "tgtd"})
@@ -332,7 +337,7 @@ def build_container_specs(
                 _config_vol(configs_dir, "qemu.conf", "/etc/libvirt/qemu.conf"),
                 _shared_vol("stackbox-libvirt-sock"),
                 _shared_vol("stackbox-libvirt-images"),
-                _vol("/dev/kvm", "/dev/kvm"),
+                _vol("/dev/kvm", "/dev/kvm", ""),
                 _kolla_config_vol(configs_dir, "nova-libvirt", KOLLA_SERVICE_COMMANDS["nova-libvirt"]),
             ],
         ))
@@ -341,15 +346,22 @@ def build_container_specs(
         sushy_image = (image_overrides or {}).get(
             "sushy-tools", f"{METAL3_REGISTRY}/sushy-tools:latest",
         )
+        libvirt_run_dir = f"/run/user/{os.getuid()}/libvirt"
         specs.append(ContainerSpec(
             name=_name("sushy-tools"),
             image=sushy_image,
             volumes=[
                 _config_vol(configs_dir, "emulator.conf", "/etc/sushy/emulator.conf"),
-                _shared_vol("stackbox-libvirt-sock"),
+                _vol(libvirt_run_dir, libvirt_run_dir, ""),
                 _shared_vol("stackbox-libvirt-images"),
                 _shared_vol("stackbox-ironic-httpboot"),
             ],
+            environment={"SUSHY_TOOLS_CONFIG": "/etc/sushy/emulator.conf"},
+            security_opts=["label=disable"],
+            extra_args=["--userns=keep-id"],
+            health_check=HealthCheck(
+                type="tcp", target=str(port_manager.get("sushy-tools")), timeout_seconds=60,
+            ),
         ))
 
     if "vbmc" in needed:
@@ -368,6 +380,7 @@ def build_container_specs(
             image=_image_for("swift-proxy-server", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "proxy-server.conf", "/etc/swift/proxy-server.conf"),
+                _config_vol(configs_dir, "swift.conf", "/etc/swift/swift.conf"),
                 _kolla_config_vol(configs_dir, "swift-proxy-server", KOLLA_SERVICE_COMMANDS["swift-proxy-server"]),
             ],
             health_check=HealthCheck(
@@ -440,5 +453,15 @@ def build_container_specs(
     for spec in specs:
         if any(v.target == kolla_config_target for v in spec.volumes):
             spec.environment.setdefault("KOLLA_CONFIG_STRATEGY", "COPY_ALWAYS")
+
+    if image_overrides:
+        kolla_dir = configs_dir / "kolla"
+        for spec in specs:
+            service = spec.name.removeprefix(f"{CONTAINER_PREFIX}-")
+            if service in image_overrides and spec.command is None:
+                config_path = kolla_dir / f"{service}.json"
+                if config_path.exists():
+                    cmd = json.loads(config_path.read_text())["command"]
+                    spec.command = shlex.split(cmd)
 
     return specs

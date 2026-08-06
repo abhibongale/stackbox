@@ -20,7 +20,7 @@ class ContainerBackend(ABC):
         """Remove a container."""
 
     @abstractmethod
-    def exec(self, name: str, cmd: list[str]) -> tuple[int, str]:
+    def exec(self, name: str, cmd: list[str], timeout: int = 300) -> tuple[int, str]:
         """Exec a command in a running container. Returns (exit_code, output)."""
 
     @abstractmethod

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 
 from stackbox.config_gen.ports import PortManager
 from stackbox.containers.backend import ContainerBackend
@@ -12,18 +11,7 @@ from stackbox.models.network import NetworkConfig
 log = logging.getLogger(__name__)
 
 CONTAINER = "stackbox-neutron-server"
-
-
-def _ovs_vsctl(args: list[str]) -> None:
-    try:
-        subprocess.run(
-            ["sudo", "ovs-vsctl"] + args,
-            capture_output=True, text=True, check=True, timeout=30,
-        )
-    except subprocess.CalledProcessError as exc:
-        if "already exists" in (exc.stderr or ""):
-            return
-        raise BootstrapError(f"ovs-vsctl {' '.join(args)} failed: {exc.stderr}") from exc
+OVS_CONTAINER = "stackbox-openvswitch-db-server"
 
 
 def _os_env(admin_pass: str, port: int) -> list[str]:
@@ -39,15 +27,23 @@ def _os_env(admin_pass: str, port: int) -> list[str]:
     ]
 
 
-def setup_ovs_bridges(manifest: SessionManifest) -> None:
+def _ovs_vsctl(backend: ContainerBackend, args: list[str]) -> None:
+    exit_code, output = backend.exec(OVS_CONTAINER, ["ovs-vsctl"] + args)
+    if exit_code != 0:
+        if "already exists" in output.lower():
+            return
+        raise BootstrapError(f"ovs-vsctl {' '.join(args)} failed: {output}")
+
+
+def setup_ovs_bridges(backend: ContainerBackend, manifest: SessionManifest) -> None:
     for bridge in ("brbm", "br-int", "br-ex"):
         log.info("Creating OVS bridge: %s", bridge)
-        _ovs_vsctl(["--may-exist", "add-br", bridge])
+        _ovs_vsctl(backend, ["--may-exist", "add-br", bridge])
         manifest.record_bridge(bridge)
 
-    _ovs_vsctl(["--may-exist", "add-port", "br-int", "int-brbm", "--",
+    _ovs_vsctl(backend, ["--may-exist", "add-port", "br-int", "int-brbm", "--",
                 "set", "interface", "int-brbm", "type=patch", "options:peer=brbm-int"])
-    _ovs_vsctl(["--may-exist", "add-port", "brbm", "brbm-int", "--",
+    _ovs_vsctl(backend, ["--may-exist", "add-port", "brbm", "brbm-int", "--",
                 "set", "interface", "brbm-int", "type=patch", "options:peer=int-brbm"])
 
     log.info("OVS bridges configured")
@@ -64,6 +60,13 @@ def create_networks(
 
     subnet = network_config.provisioning_subnet
 
+    exit_code, _ = backend.exec(CONTAINER, env + [
+        "openstack", "network", "show", network_config.provisioning_network,
+    ])
+    if exit_code == 0:
+        log.info("Provisioning network already exists, skipping")
+        return
+
     exit_code, output = backend.exec(CONTAINER, env + [
         "openstack", "network", "create",
         "--provider-network-type", "flat",
@@ -71,7 +74,7 @@ def create_networks(
         "--share",
         network_config.provisioning_network,
     ])
-    if exit_code != 0 and "already exists" not in output.lower():
+    if exit_code != 0:
         raise BootstrapError(f"Failed to create provisioning network: {output}")
 
     subnet_cmd = env + [
@@ -91,7 +94,7 @@ def create_networks(
         subnet_cmd.append("--no-dhcp")
 
     exit_code, output = backend.exec(CONTAINER, subnet_cmd)
-    if exit_code != 0 and "already exists" not in output.lower():
+    if exit_code != 0:
         raise BootstrapError(f"Failed to create provisioning subnet: {output}")
 
     log.info("Provisioning network created")

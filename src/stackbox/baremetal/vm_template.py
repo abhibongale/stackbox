@@ -23,13 +23,13 @@ DOMAIN_XML = Template("""\
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
     <disk type='file' device='disk'>
       <driver name='qemu' type='qcow2'/>
-      <source file='/var/lib/libvirt/images/{{ node.name }}.qcow2'/>
+      <source file='{{ image_dir }}/{{ node.name }}.qcow2'/>
       <target dev='vda' bus='virtio'/>
     </disk>
 {% if node.disk_gb > 0 and ephemeral_gb > 0 %}
     <disk type='file' device='disk'>
       <driver name='qemu' type='qcow2'/>
-      <source file='/var/lib/libvirt/images/{{ node.name }}-ephemeral.qcow2'/>
+      <source file='{{ image_dir }}/{{ node.name }}-ephemeral.qcow2'/>
       <target dev='vdb' bus='virtio'/>
     </disk>
 {% endif %}
@@ -53,5 +53,5 @@ DOMAIN_XML = Template("""\
 """)
 
 
-def render_domain_xml(node: VirtualBMNode, ephemeral_gb: int = 0) -> str:
-    return DOMAIN_XML.render(node=node, ephemeral_gb=ephemeral_gb)
+def render_domain_xml(node: VirtualBMNode, ephemeral_gb: int = 0, image_dir: str = "/var/lib/libvirt/images") -> str:
+    return DOMAIN_XML.render(node=node, ephemeral_gb=ephemeral_gb, image_dir=image_dir)

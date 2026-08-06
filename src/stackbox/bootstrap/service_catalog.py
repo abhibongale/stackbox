@@ -68,6 +68,17 @@ def register_services(
         elif svc_type == "compute":
             url = f"http://localhost:{port}/v2.1"
 
+        exit_code, output = backend.exec(
+            CONTAINER,
+            env + ["openstack", "service", "list", "-f", "value",
+                   "-c", "ID", "-c", "Type"],
+        )
+        if exit_code == 0 and any(
+            line.split()[-1] == svc_type for line in output.strip().splitlines()
+        ):
+            log.info("Service %s already exists, skipping", name)
+            continue
+
         _exec_or_fail(
             backend,
             env + ["openstack", "service", "create", "--name", name, svc_type],

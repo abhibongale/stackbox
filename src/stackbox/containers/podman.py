@@ -81,8 +81,8 @@ class PodmanBackend(ContainerBackend):
         cmd.append(name)
         self._run_cmd(cmd, check=False)
 
-    def exec(self, name: str, cmd: list[str]) -> tuple[int, str]:
-        result = self._run_cmd(["podman", "exec", name] + cmd, check=False)
+    def exec(self, name: str, cmd: list[str], timeout: int = 300) -> tuple[int, str]:
+        result = self._run_cmd(["podman", "exec", name] + cmd, check=False, timeout=timeout)
         output = result.stdout + result.stderr
         return result.returncode, output.strip()
 

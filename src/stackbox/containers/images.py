@@ -69,7 +69,7 @@ class ImageManager:
         containerfile: str,
         plugin_source: str | None = None,
     ) -> str:
-        tag = "stackbox-tempest:local"
+        tag = "localhost/stackbox-tempest:local"
         build_args = {}
         if plugin_source:
             build_args["TEMPEST_PLUGIN_SOURCE"] = plugin_source

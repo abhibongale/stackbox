@@ -19,6 +19,14 @@ class NeutronConfigGenerator(ServiceConfigGenerator):
             "notify_nova_on_port_data_changes": "true",
         })
 
+        server_config["privsep"] = {
+            "helper_command": (
+                "privsep-helper"
+                " --config-file /etc/neutron/neutron.conf"
+                " --config-file /etc/neutron/plugins/ml2/ml2_conf.ini"
+            ),
+        }
+
         server_config["nova"] = {
             "auth_url": f"http://localhost:{self.ports.get('keystone')}",
             "auth_type": "password",

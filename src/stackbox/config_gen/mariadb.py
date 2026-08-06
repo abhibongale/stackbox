@@ -39,8 +39,9 @@ class MariaDBConfigGenerator(ServiceConfigGenerator):
 
         for db in all_dbs:
             user = DB_OWNER_OVERRIDES.get(db, db)
-            lines.append(f"DROP DATABASE IF EXISTS `{db}`;")
-            lines.append(f"CREATE DATABASE `{db}` CHARACTER SET utf8mb4;")
+            lines.append(
+                f"CREATE DATABASE IF NOT EXISTS `{db}` CHARACTER SET utf8mb4;"
+            )
             lines.append(
                 f"GRANT ALL PRIVILEGES ON `{db}`.* TO '{user}'@'%'"
                 f" IDENTIFIED BY '{db_pass}';"

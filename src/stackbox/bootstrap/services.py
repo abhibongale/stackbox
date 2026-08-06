@@ -6,6 +6,7 @@ from stackbox.containers.backend import ContainerBackend
 from stackbox.containers.health import check
 from stackbox.containers.manifest import SessionManifest
 from stackbox.containers.specs import required_containers
+from stackbox.exceptions import ContainerError
 from stackbox.models.container import ContainerSpec
 from stackbox.models.job_config import ResolvedJobConfig
 
@@ -51,19 +52,18 @@ def start_services(
         if not group_specs:
             continue
 
+        started = []
         for spec in group_specs:
-            if backend.is_running(spec.name):
-                log.info("Skipping %s (already running)", spec.name)
-                continue
-            try:
-                backend.remove(spec.name, force=True)
-            except Exception:
-                pass
             log.info("Starting %s", spec.name)
-            backend.run(spec)
+            try:
+                backend.run(spec)
+            except ContainerError as exc:
+                log.warning("Failed to start %s, skipping: %s", spec.name, exc)
+                continue
             manifest.record_container(spec.name)
+            started.append(spec)
 
-        for spec in group_specs:
+        for spec in started:
             if spec.health_check:
                 log.info("Waiting for %s health check...", spec.name)
                 check(backend, spec)

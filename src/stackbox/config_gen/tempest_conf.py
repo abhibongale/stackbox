@@ -55,7 +55,7 @@ class TempestConfigGenerator(ServiceConfigGenerator):
         }
 
         config["network"] = {
-            "shared_physical_network": "mynet",
+            "shared_physical_network": "true",
         }
 
         config["image"] = {

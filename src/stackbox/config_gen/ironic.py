@@ -10,11 +10,16 @@ class IronicConfigGenerator(ServiceConfigGenerator):
         config = self._base_config("ironic")
         lr = self.job.devstack_localrc
 
+        boot_ifaces = lr.get(
+            "IRONIC_ENABLED_BOOT_INTERFACES", "redfish-virtual-media")
+        default_boot = lr.get(
+            "IRONIC_DEFAULT_BOOT_INTERFACE", boot_ifaces.split(",")[0].strip())
+
         config["DEFAULT"].update({
             "enabled_hardware_types": lr.get(
                 "IRONIC_ENABLED_HARDWARE_TYPES", "redfish"),
-            "enabled_boot_interfaces": lr.get(
-                "IRONIC_ENABLED_BOOT_INTERFACES", "redfish-virtual-media"),
+            "enabled_boot_interfaces": boot_ifaces,
+            "default_boot_interface": default_boot,
             "enabled_deploy_interfaces": lr.get(
                 "IRONIC_ENABLED_DEPLOY_INTERFACES", "direct"),
             "enabled_management_interfaces": lr.get(

@@ -11,20 +11,8 @@ class TestGlanceConfigGenerator:
         files = gen.generate()
         assert "glance-api.conf" in files
 
-    def test_swift_backend_when_enabled(self, vmedia_job_config, port_manager):
-        assert vmedia_job_config.devstack_services.get("s-proxy", False) is True
+    def test_always_uses_file_backend(self, vmedia_job_config, port_manager):
         gen = GlanceConfigGenerator(vmedia_job_config, port_manager)
-        config = ConfigParser()
-        config.read_string(gen.generate()["glance-api.conf"])
-        assert config["glance_store"]["default_backend"] == "swift"
-        assert "swift" in config.sections()
-
-    def test_file_backend_when_swift_disabled(self, port_manager):
-        job = ResolvedJobConfig(
-            job_name="test",
-            devstack_services={"s-proxy": False},
-        )
-        gen = GlanceConfigGenerator(job, port_manager)
         config = ConfigParser()
         config.read_string(gen.generate()["glance-api.conf"])
         assert config["glance_store"]["default_backend"] == "file"

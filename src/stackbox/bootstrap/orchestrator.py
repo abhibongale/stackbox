@@ -59,7 +59,7 @@ class BootstrapOrchestrator:
         self._stop_dbsync_containers()
 
     def _run_network_phase(self) -> None:
-        setup_ovs_bridges(self.manifest)
+        setup_ovs_bridges(self.backend, self.manifest)
         create_networks(
             self.backend, NetworkConfig(), self.port_manager, self.admin_pass,
         )
@@ -166,6 +166,7 @@ class BootstrapOrchestrator:
             self.manifest.record_container("stackbox-keystone")
 
     def _setup_baremetal(self) -> None:
+        LibvirtManager.ensure_running()
         libvirt = LibvirtManager()
         nodes = libvirt.create_nodes(self.job.vm_specs)
         for node in nodes:

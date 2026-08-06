@@ -62,6 +62,10 @@ KOLLA_IMAGES = {
     "iscsid": "iscsid",
 }
 
+KOLLA_RELEASE_OVERRIDES = {
+    "swift-proxy-server": "master-ubuntu-noble",
+}
+
 METAL3_IMAGES = {
     "sushy-tools": "sushy-tools",
     "vbmc": "vbmc",

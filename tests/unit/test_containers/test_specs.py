@@ -31,9 +31,9 @@ class TestRequiredContainers:
         assert "sushy-tools" in needed
         assert "vbmc" not in needed
 
-    def test_vmedia_has_swift(self, vmedia_job):
+    def test_vmedia_no_swift(self, vmedia_job):
         needed = required_containers(vmedia_job)
-        assert "swift-proxy-server" in needed
+        assert "swift-proxy-server" not in needed
 
     def test_vmedia_no_dnsmasq(self, vmedia_job):
         needed = required_containers(vmedia_job)

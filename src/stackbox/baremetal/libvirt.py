@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import subprocess
 import tempfile
@@ -12,6 +13,15 @@ from stackbox.models.baremetal import VirtualBMNode
 from stackbox.models.job_config import VMSpecs
 
 log = logging.getLogger(__name__)
+
+SYSTEM_IMAGE_DIR = "/var/lib/libvirt/images"
+SESSION_IMAGE_DIR = str(Path.home() / ".local/share/stackbox/libvirt/images")
+
+
+def _default_image_dir() -> str:
+    if os.access(SYSTEM_IMAGE_DIR, os.W_OK):
+        return SYSTEM_IMAGE_DIR
+    return SESSION_IMAGE_DIR
 
 
 def _virsh(args: list[str], check: bool = True) -> str:
@@ -41,18 +51,31 @@ def _random_mac() -> str:
 
 
 def _create_disk(path: str, size_gb: int) -> None:
-    subprocess.run(
+    if Path(path).exists():
+        log.debug("Disk %s already exists, reusing", path)
+        return
+    result = subprocess.run(
         ["qemu-img", "create", "-f", "qcow2", path, f"{size_gb}G"],
-        capture_output=True, check=True, timeout=30,
+        capture_output=True, text=True, timeout=30,
     )
+    if result.returncode != 0:
+        raise BootstrapError(
+            f"Failed to create disk {path}: {result.stderr.strip()}"
+        )
 
 
 class LibvirtManager:
 
-    def __init__(self, image_dir: str = "/var/lib/libvirt/images"):
-        self.image_dir = Path(image_dir)
+    def __init__(self, image_dir: str | None = None):
+        self.image_dir = Path(image_dir or _default_image_dir())
+        self.image_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def ensure_running() -> None:
+        _virsh(["uri"])
 
     def create_nodes(self, vm_specs: VMSpecs, prefix: str = "stackbox-node") -> list[VirtualBMNode]:
+        self.ensure_running()
         nodes = []
         for i in range(vm_specs.count):
             name = f"{prefix}-{i}"
@@ -72,7 +95,7 @@ class LibvirtManager:
                 eph_path = str(self.image_dir / f"{name}-ephemeral.qcow2")
                 _create_disk(eph_path, vm_specs.ephemeral_gb)
 
-            xml = render_domain_xml(node, ephemeral_gb=vm_specs.ephemeral_gb)
+            xml = render_domain_xml(node, ephemeral_gb=vm_specs.ephemeral_gb, image_dir=str(self.image_dir))
             with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
                 f.write(xml)
                 xml_path = f.name
@@ -82,7 +105,8 @@ class LibvirtManager:
             finally:
                 import os
                 os.unlink(xml_path)
-            log.info("Defined VM %s (mac=%s, ram=%dMB, disk=%dGB)", name, mac, node.ram_mb, node.disk_gb)
+            node.uuid = _virsh(["domuuid", name]).strip()
+            log.info("Defined VM %s uuid=%s (mac=%s, ram=%dMB, disk=%dGB)", name, node.uuid, mac, node.ram_mb, node.disk_gb)
             nodes.append(node)
 
         return nodes

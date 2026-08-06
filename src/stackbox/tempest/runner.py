@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +13,7 @@ from stackbox.exceptions import BootstrapError
 log = logging.getLogger(__name__)
 
 CONTAINER = "stackbox-tempest"
+WORKSPACE = "/opt/tempest/workspace"
 
 
 class TempestRunner:
@@ -25,28 +27,39 @@ class TempestRunner:
         tempest_conf: Path,
         test_regex: str,
         results_dir: Path,
-        image: str = "stackbox-tempest:local",
+        image: str = "localhost/stackbox-tempest:latest",
     ) -> int:
         results_dir.mkdir(parents=True, exist_ok=True)
 
         from stackbox.models.container import ContainerSpec, VolumeMount
 
+        init_script = (
+            f"tempest init /tmp/tempest-init 2>/dev/null; "
+            f"mkdir -p {WORKSPACE}/etc; "
+            f"cp /tmp/tempest-init/.stestr.conf {WORKSPACE}/; "
+            f"cp /tmp/stackbox-tempest.conf {WORKSPACE}/etc/tempest.conf; "
+            f"cd {WORKSPACE}; "
+            f"stestr init 2>/dev/null; "
+            f"tempest run --regex {shlex.quote(test_regex)}"
+        )
+
         spec = ContainerSpec(
             name=CONTAINER,
             image=image,
+            entrypoint=["/bin/bash"],
             volumes=[
                 VolumeMount(
                     source=str(tempest_conf),
-                    target="/opt/tempest/workspace/etc/tempest.conf",
+                    target="/tmp/stackbox-tempest.conf",
                     options="ro,z",
                 ),
                 VolumeMount(
                     source=str(results_dir),
-                    target="/opt/tempest/workspace/tempest_results",
+                    target=f"{WORKSPACE}/tempest_results",
                     options="z",
                 ),
             ],
-            command=["tempest", "run", "--regex", test_regex],
+            command=["-c", init_script],
         )
 
         log.info("Starting Tempest: regex=%s", test_regex)
@@ -81,6 +94,8 @@ class TempestRunner:
             "--name", spec.name,
             "--network", spec.network,
         ]
+        if spec.entrypoint:
+            cmd.extend(["--entrypoint", spec.entrypoint[0]])
         for vol in spec.volumes:
             mount_str = f"{vol.source}:{vol.target}"
             if vol.options:

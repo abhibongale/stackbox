@@ -60,4 +60,9 @@ use = egg:swift#ratelimit
 [swift-hash]
 swift_hash_path_suffix = {swift_hash}
 """
-        return {"proxy-server.conf": content}
+        swift_conf = f"""\
+[swift-hash]
+swift_hash_path_suffix = {swift_hash}
+swift_hash_path_prefix = {swift_hash}
+"""
+        return {"proxy-server.conf": content, "swift.conf": swift_conf}

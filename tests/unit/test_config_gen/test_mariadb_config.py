@@ -13,7 +13,7 @@ class TestMariaDBConfigGenerator:
         gen = MariaDBConfigGenerator(vmedia_job_config, port_manager)
         sql = gen.generate()["init.sql"]
         for db in ["keystone", "glance", "nova", "neutron", "ironic", "placement"]:
-            assert f"CREATE DATABASE `{db}`" in sql
+            assert f"CREATE DATABASE IF NOT EXISTS `{db}`" in sql
 
     def test_cinder_db_when_enabled(self, port_manager):
         job = ResolvedJobConfig(
@@ -22,7 +22,7 @@ class TestMariaDBConfigGenerator:
         )
         gen = MariaDBConfigGenerator(job, port_manager)
         sql = gen.generate()["init.sql"]
-        assert "CREATE DATABASE `cinder`" in sql
+        assert "CREATE DATABASE IF NOT EXISTS `cinder`" in sql
 
     def test_no_cinder_db_when_disabled(self, vmedia_job_config, port_manager):
         gen = MariaDBConfigGenerator(vmedia_job_config, port_manager)
