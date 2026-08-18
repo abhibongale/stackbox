@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from stackbox.baremetal.vm_template import render_domain_xml
+from stackbox.containers.backend import ContainerBackend
 from stackbox.exceptions import BootstrapError
 from stackbox.models.baremetal import VirtualBMNode
 from stackbox.models.job_config import VMSpecs
@@ -16,9 +17,10 @@ log = logging.getLogger(__name__)
 
 SYSTEM_IMAGE_DIR = "/var/lib/libvirt/images"
 SESSION_IMAGE_DIR = str(Path.home() / ".local/share/stackbox/libvirt/images")
+VMEDIA_DIR = str(Path.home() / ".local/share/stackbox/vmedia")
 
 
-def _default_image_dir() -> str:
+def default_image_dir() -> str:
     if os.access(SYSTEM_IMAGE_DIR, os.W_OK):
         return SYSTEM_IMAGE_DIR
     return SESSION_IMAGE_DIR
@@ -66,20 +68,53 @@ def _create_disk(path: str, size_gb: int) -> None:
 
 class LibvirtManager:
 
-    def __init__(self, image_dir: str | None = None):
-        self.image_dir = Path(image_dir or _default_image_dir())
+    def __init__(self, image_dir: str | None = None, backend: ContainerBackend | None = None):
+        self.backend = backend
+        self.image_dir = Path(image_dir or default_image_dir())
         self.image_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def ensure_running() -> None:
         _virsh(["uri"])
+        result = subprocess.run(
+            ["virsh", "pool-info", "default"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            pool_dir = str(Path(SESSION_IMAGE_DIR).parent / "default-pool")
+            Path(pool_dir).mkdir(parents=True, exist_ok=True)
+            _virsh(["pool-define-as", "default", "dir", "--target", pool_dir])
+            _virsh(["pool-start", "default"])
+            _virsh(["pool-autostart", "default"])
+            log.info("Created default libvirt storage pool at %s", pool_dir)
+        elif "inactive" in result.stdout.lower():
+            _virsh(["pool-start", "default"])
+            log.info("Started inactive default libvirt storage pool")
+
+    @staticmethod
+    def _get_existing_mac(name: str) -> str | None:
+        result = subprocess.run(
+            ["virsh", "domiflist", name],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            for part in parts:
+                if part.startswith("52:54:00:"):
+                    return part
+        return None
 
     def create_nodes(self, vm_specs: VMSpecs, prefix: str = "stackbox-node") -> list[VirtualBMNode]:
         self.ensure_running()
         nodes = []
         for i in range(vm_specs.count):
             name = f"{prefix}-{i}"
-            mac = _random_mac()
+
+            existing_mac = self._get_existing_mac(name)
+            mac = existing_mac or _random_mac()
+
             node = VirtualBMNode(
                 name=name,
                 ram_mb=vm_specs.ram_mb,
@@ -101,7 +136,20 @@ class LibvirtManager:
                 xml_path = f.name
 
             try:
-                _virsh(["define", xml_path])
+                result = subprocess.run(
+                    ["virsh", "list", "--all", "--name"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if name in result.stdout.splitlines():
+                    if not existing_mac:
+                        _virsh(["destroy", name], check=False)
+                        _virsh(["undefine", name, "--nvram"], check=False)
+                        _virsh(["undefine", name], check=False)
+                        _virsh(["define", xml_path])
+                    else:
+                        log.info("VM %s already exists with mac=%s, keeping", name, existing_mac)
+                else:
+                    _virsh(["define", xml_path])
             finally:
                 import os
                 os.unlink(xml_path)
@@ -113,6 +161,7 @@ class LibvirtManager:
 
     def destroy_node(self, name: str) -> None:
         _virsh(["destroy", name], check=False)
+        _virsh(["undefine", name, "--nvram", "--remove-all-storage"], check=False)
         _virsh(["undefine", name, "--remove-all-storage"], check=False)
         log.info("Destroyed VM %s", name)
 

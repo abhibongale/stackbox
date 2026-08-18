@@ -20,11 +20,16 @@ class NeutronConfigGenerator(ServiceConfigGenerator):
         })
 
         server_config["privsep"] = {
+            "user": "root",
+            "group": "root",
             "helper_command": (
-                "privsep-helper"
+                "sudo privsep-helper"
                 " --config-file /etc/neutron/neutron.conf"
-                " --config-file /etc/neutron/plugins/ml2/ml2_conf.ini"
             ),
+        }
+
+        server_config["oslo_concurrency"] = {
+            "lock_path": "/var/lib/neutron/lock",
         }
 
         server_config["nova"] = {
@@ -70,4 +75,5 @@ class NeutronConfigGenerator(ServiceConfigGenerator):
         return {
             "neutron.conf": self._render(server_config),
             "ml2_conf.ini": self._render(ml2_config),
+            "neutron-privsep-sudoers": "neutron ALL=(root) NOPASSWD: ALL\n",
         }

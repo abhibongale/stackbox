@@ -5,23 +5,22 @@ import pytest
 from stackbox.config_gen.ports import PortManager
 from stackbox.exceptions import PortConflictError, PreflightError
 from stackbox.containers.preflight import (
+    check_docker,
     check_kvm,
     check_libvirt,
-    check_ovs,
-    check_podman,
     check_ports,
 )
 
 
-class TestCheckPodman:
+class TestCheckDocker:
     def test_succeeds_when_installed(self):
         with patch("stackbox.containers.preflight._cmd_exists", return_value=True):
-            check_podman()
+            check_docker()
 
     def test_raises_when_missing(self):
         with patch("stackbox.containers.preflight._cmd_exists", return_value=False):
-            with pytest.raises(PreflightError, match="podman"):
-                check_podman()
+            with pytest.raises(PreflightError, match="docker"):
+                check_docker()
 
 
 class TestCheckLibvirt:
@@ -33,17 +32,6 @@ class TestCheckLibvirt:
         with patch("stackbox.containers.preflight._cmd_exists", return_value=False):
             with pytest.raises(PreflightError, match="virsh"):
                 check_libvirt()
-
-
-class TestCheckOvs:
-    def test_succeeds_when_installed(self):
-        with patch("stackbox.containers.preflight._cmd_exists", return_value=True):
-            check_ovs()
-
-    def test_raises_when_missing(self):
-        with patch("stackbox.containers.preflight._cmd_exists", return_value=False):
-            with pytest.raises(PreflightError, match="ovs-vsctl"):
-                check_ovs()
 
 
 class TestCheckKvm:

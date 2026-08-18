@@ -75,7 +75,7 @@ KOLLA_SERVICE_COMMANDS = {
     "mariadb": "/usr/sbin/mariadbd",
     "rabbitmq": "/usr/sbin/rabbitmq-server",
     "memcached": "/usr/bin/memcached -u memcache",
-    "glance-api": "glance-api",
+    "glance-api": "glance-api --config-file /etc/glance/glance-api.conf",
     "neutron-server": "neutron-server --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini",
     "neutron-dhcp-agent": "neutron-dhcp-agent --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/dhcp_agent.ini",
     "neutron-l3-agent": "neutron-l3-agent --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/l3_agent.ini",

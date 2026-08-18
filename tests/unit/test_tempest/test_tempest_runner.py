@@ -26,7 +26,7 @@ class TestTempestRunner:
             command=["tempest", "run", "--regex", "test_.*baremetal"],
         )
         cmd = runner._build_run_cmd(spec)
-        assert cmd[0] == "podman"
+        assert cmd[0] == "docker"
         assert "run" in cmd
         assert "--rm" not in cmd
         assert "--name" in cmd

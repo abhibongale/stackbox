@@ -1,4 +1,5 @@
 import signal
+import subprocess
 import uuid as _uuid
 from contextlib import contextmanager
 
@@ -199,7 +200,7 @@ def init(release):
     from stackbox.config_gen.ports import PortManager
     from stackbox.containers import preflight
     from stackbox.containers.images import ImageManager
-    from stackbox.containers.podman import PodmanBackend
+    from stackbox.containers.docker import DockerBackend
     from stackbox.models.job_config import ResolvedJobConfig
 
     console = Console()
@@ -211,7 +212,7 @@ def init(release):
 
     console.print("[green]Preflight checks passed[/green]")
 
-    backend = PodmanBackend()
+    backend = DockerBackend()
     images = ImageManager(backend, release)
 
     core_kolla = [
@@ -253,7 +254,7 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
     from stackbox.bootstrap.orchestrator import BootstrapOrchestrator
     from stackbox.config_gen import ConfigPipeline
     from stackbox.containers.manifest import SessionManifest
-    from stackbox.containers.podman import PodmanBackend
+    from stackbox.containers.docker import DockerBackend
 
     console = Console()
     local_repos = _parse_local_repos(local_repo)
@@ -268,7 +269,7 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
     if local_repos:
         from stackbox.containers.images import ImageManager
 
-        backend = PodmanBackend()
+        backend = DockerBackend()
         images = ImageManager(backend, release)
         with console.status(f"Building {len(local_repos)} local dev images..."):
             image_overrides = images.build_local_repos(local_repos)
@@ -294,7 +295,7 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
     console.print(f"[green]Generated {len(generated)} config files[/green]")
 
     if not local_repos:
-        backend = PodmanBackend()
+        backend = DockerBackend()
     manifest = SessionManifest(
         session_id=session_id,
         configs_dir=str(configs_dir),
@@ -318,22 +319,19 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
 
             if not skip_tempest and config.tempest_test_regex:
                 from stackbox.tempest.runner import TempestRunner
+                from stackbox.containers.images import CONTAINERFILES_DIR, ImageManager
 
                 runner = TempestRunner(backend, manifest)
                 results_dir = session_dir / "results"
 
-                tempest_image = "localhost/stackbox-tempest:latest"
                 plugin_source = local_repos.get("ironic-tempest-plugin")
-                if plugin_source:
-                    from stackbox.containers.images import CONTAINERFILES_DIR, ImageManager
-
-                    images = ImageManager(backend, release)
-                    with console.status("Building custom tempest image..."):
-                        tempest_image = images.build_tempest(
-                            context=str(CONTAINERFILES_DIR),
-                            containerfile=str(CONTAINERFILES_DIR / "Containerfile.tempest"),
-                            plugin_source=plugin_source,
-                        )
+                images = ImageManager(backend, release)
+                with console.status("Building tempest image..."):
+                    tempest_image = images.build_tempest(
+                        context=str(CONTAINERFILES_DIR),
+                        containerfile=str(CONTAINERFILES_DIR / "Containerfile.tempest"),
+                        plugin_source=plugin_source,
+                    )
 
                 exit_code = runner.run(
                     tempest_conf=configs_dir / "tempest.conf",
@@ -372,7 +370,7 @@ def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, r
     from stackbox.bootstrap.orchestrator import BootstrapOrchestrator
     from stackbox.config_gen import ConfigPipeline
     from stackbox.containers.manifest import SessionManifest
-    from stackbox.containers.podman import PodmanBackend
+    from stackbox.containers.docker import DockerBackend
     from stackbox.reproducer.build_fetcher import BuildFetcher
     from stackbox.reproducer.inventory_parser import InventoryParser
     from stackbox.reproducer.variable_extractor import VariableExtractor
@@ -410,7 +408,7 @@ def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, r
     if local_repos:
         from stackbox.containers.images import ImageManager
 
-        backend = PodmanBackend()
+        backend = DockerBackend()
         images = ImageManager(backend, release)
         with console.status(f"Building {len(local_repos)} local dev images..."):
             image_overrides = images.build_local_repos(local_repos)
@@ -429,7 +427,7 @@ def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, r
         generated = pipeline.generate_all(config, configs_dir)
 
     if not local_repos:
-        backend = PodmanBackend()
+        backend = DockerBackend()
     manifest = SessionManifest(session_id=session_id, configs_dir=str(configs_dir))
 
     orchestrator = BootstrapOrchestrator(
@@ -447,21 +445,18 @@ def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, r
 
             if not skip_tempest and config.tempest_test_regex:
                 from stackbox.tempest.runner import TempestRunner
+                from stackbox.containers.images import CONTAINERFILES_DIR, ImageManager
 
                 runner = TempestRunner(backend, manifest)
 
-                tempest_image = "localhost/stackbox-tempest:latest"
                 plugin_source = local_repos.get("ironic-tempest-plugin")
-                if plugin_source:
-                    from stackbox.containers.images import CONTAINERFILES_DIR, ImageManager
-
-                    images = ImageManager(backend, release)
-                    with console.status("Building custom tempest image..."):
-                        tempest_image = images.build_tempest(
-                            context=str(CONTAINERFILES_DIR),
-                            containerfile=str(CONTAINERFILES_DIR / "Containerfile.tempest"),
-                            plugin_source=plugin_source,
-                        )
+                images = ImageManager(backend, release)
+                with console.status("Building tempest image..."):
+                    tempest_image = images.build_tempest(
+                        context=str(CONTAINERFILES_DIR),
+                        containerfile=str(CONTAINERFILES_DIR / "Containerfile.tempest"),
+                        plugin_source=plugin_source,
+                    )
 
                 exit_code = runner.run(
                     tempest_conf=configs_dir / "tempest.conf",
@@ -528,10 +523,10 @@ def list_jobs(project, pipeline):
 @cli.command()
 def status():
     """Show running stackbox containers."""
-    from stackbox.containers.podman import PodmanBackend
+    from stackbox.containers.docker import DockerBackend
 
     console = Console()
-    backend = PodmanBackend()
+    backend = DockerBackend()
 
     containers = backend.list_containers(prefix="stackbox-")
     if not containers:
@@ -564,9 +559,9 @@ def status():
 @click.option("--tail", type=int, default=None, help="Number of lines to show")
 def logs(service, follow, tail):
     """Tail logs from a service container."""
-    from stackbox.containers.podman import PodmanBackend
+    from stackbox.containers.docker import DockerBackend
 
-    backend = PodmanBackend()
+    backend = DockerBackend()
     name = f"stackbox-{service}" if not service.startswith("stackbox-") else service
     output = backend.logs(name, follow=follow, tail=tail)
     if output:
@@ -578,9 +573,9 @@ def logs(service, follow, tail):
 @click.argument("cmd", nargs=-1, required=True)
 def exec_cmd(service, cmd):
     """Execute a command in a service container."""
-    from stackbox.containers.podman import PodmanBackend
+    from stackbox.containers.docker import DockerBackend
 
-    backend = PodmanBackend()
+    backend = DockerBackend()
     name = f"stackbox-{service}" if not service.startswith("stackbox-") else service
     exit_code, output = backend.exec(name, list(cmd))
     if output:
@@ -638,10 +633,10 @@ def clean(session, remove_all, force):
     import subprocess
 
     from stackbox.containers.manifest import SessionManifest
-    from stackbox.containers.podman import PodmanBackend
+    from stackbox.containers.docker import DockerBackend
 
     console = Console()
-    backend = PodmanBackend()
+    backend = DockerBackend()
 
     if session:
         session_dir = SESSIONS_DIR / session
@@ -669,6 +664,18 @@ def clean(session, remove_all, force):
         return
 
     with console.status("Cleaning up..."):
+        if manifest.ovs_bridges:
+            ovs_running = backend.is_running("stackbox-openvswitch-db-server")
+            if ovs_running:
+                for bridge in manifest.ovs_bridges:
+                    backend.exec(
+                        "stackbox-openvswitch-db-server",
+                        ["ovs-vsctl", "--if-exists", "del-br", bridge],
+                    )
+                    console.print(f"  Removed bridge {bridge}")
+            else:
+                console.print("[yellow]OVS container was not running, bridges may persist[/yellow]")
+
         for name in reversed(manifest.containers):
             if not force:
                 backend.stop(name)
@@ -677,12 +684,9 @@ def clean(session, remove_all, force):
 
         for domain in manifest.libvirt_domains:
             subprocess.run(["virsh", "destroy", domain], capture_output=True)
+            subprocess.run(["virsh", "undefine", domain, "--nvram", "--remove-all-storage"], capture_output=True)
             subprocess.run(["virsh", "undefine", domain, "--remove-all-storage"], capture_output=True)
             console.print(f"  Removed VM {domain}")
-
-        for bridge in manifest.ovs_bridges:
-            subprocess.run(["sudo", "ovs-vsctl", "--if-exists", "del-br", bridge], capture_output=True)
-            console.print(f"  Removed bridge {bridge}")
 
         if remove_all:
             for vol in manifest.volumes:

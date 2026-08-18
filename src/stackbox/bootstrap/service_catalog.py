@@ -76,16 +76,27 @@ def register_services(
         if exit_code == 0 and any(
             line.split()[-1] == svc_type for line in output.strip().splitlines()
         ):
-            log.info("Service %s already exists, skipping", name)
-            continue
+            log.info("Service %s already exists", name)
+        else:
+            _exec_or_fail(
+                backend,
+                env + ["openstack", "service", "create", "--name", name, svc_type],
+                f"create service {name}",
+            )
 
-        _exec_or_fail(
-            backend,
-            env + ["openstack", "service", "create", "--name", name, svc_type],
-            f"create service {name}",
+        exit_code, ep_output = backend.exec(
+            CONTAINER,
+            env + ["openstack", "endpoint", "list", "--service", svc_type,
+                   "-f", "value", "-c", "Interface"],
         )
+        existing = set()
+        if exit_code == 0 and ep_output.strip():
+            existing = {line.strip() for line in ep_output.strip().splitlines()}
 
         for interface in ("public", "internal", "admin"):
+            if interface in existing:
+                log.info("Endpoint %s/%s already exists", name, interface)
+                continue
             _exec_or_fail(
                 backend,
                 env + [
@@ -94,5 +105,15 @@ def register_services(
                 ],
                 f"create {interface} endpoint for {name}",
             )
+
+    exit_code, output = backend.exec(
+        CONTAINER,
+        env + ["openstack", "endpoint", "list", "-f", "value",
+               "-c", "Service Type", "-c", "Interface", "-c", "URL"],
+    )
+    if exit_code == 0:
+        log.warning("Registered endpoints:\n%s", output)
+    else:
+        log.warning("Failed to verify endpoints: %s", output)
 
     log.info("Service catalog registration complete (%d services)", len(services))

@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Callable
 
 from stackbox.containers.backend import ContainerBackend
 from stackbox.containers.health import check
 from stackbox.containers.manifest import SessionManifest
 from stackbox.containers.specs import required_containers
-from stackbox.exceptions import ContainerError
+from stackbox.exceptions import BootstrapError, ContainerError
 from stackbox.models.container import ContainerSpec
 from stackbox.models.job_config import ResolvedJobConfig
 
 log = logging.getLogger(__name__)
+
+MAX_START_RETRIES = 3
+RETRY_DELAY_SECONDS = 5
 
 START_ORDER = [
     ["placement-api"],
@@ -24,7 +29,7 @@ START_ORDER = [
     ["cinder-api", "cinder-scheduler", "cinder-volume", "tgtd"],
     ["sushy-tools", "vbmc"],
     ["dnsmasq", "ironic-pxe"],
-    ["ironic-api", "ironic-conductor"],
+    ["ironic-api", "ironic-conductor", "ironic-http"],
     ["nova-compute"],
 ]
 
@@ -34,6 +39,7 @@ def start_services(
     job: ResolvedJobConfig,
     specs: list[ContainerSpec],
     manifest: SessionManifest,
+    after_ovs: "Callable[[], None] | None" = None,
 ) -> None:
     needed = required_containers(job)
     specs_by_name = {s.name: s for s in specs}
@@ -55,11 +61,22 @@ def start_services(
         started = []
         for spec in group_specs:
             log.info("Starting %s", spec.name)
-            try:
-                backend.run(spec)
-            except ContainerError as exc:
-                log.warning("Failed to start %s, skipping: %s", spec.name, exc)
-                continue
+            last_err = None
+            for attempt in range(1, MAX_START_RETRIES + 1):
+                try:
+                    backend.run(spec)
+                    last_err = None
+                    break
+                except ContainerError as exc:
+                    last_err = exc
+                    if attempt < MAX_START_RETRIES:
+                        log.warning(
+                            "Failed to start %s (attempt %d/%d), retrying in %ds: %s",
+                            spec.name, attempt, MAX_START_RETRIES, RETRY_DELAY_SECONDS, exc,
+                        )
+                        time.sleep(RETRY_DELAY_SECONDS)
+            if last_err is not None:
+                raise BootstrapError(f"Failed to start {spec.name} after {MAX_START_RETRIES} attempts: {last_err}")
             manifest.record_container(spec.name)
             started.append(spec)
 
@@ -67,6 +84,9 @@ def start_services(
             if spec.health_check:
                 log.info("Waiting for %s health check...", spec.name)
                 check(backend, spec)
+
+        if after_ovs and "openvswitch-db-server" in group:
+            after_ovs()
 
     if "nova-compute" in needed:
         log.info("Discovering compute hosts...")

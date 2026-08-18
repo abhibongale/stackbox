@@ -5,8 +5,23 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
     gcc git libffi-dev libssl-dev libpq-dev \
-    ipmitool qemu-utils && \
+    ipmitool qemu-utils genisoimage \
+    grub-efi-amd64-bin dosfstools mtools && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN printf 'search --no-floppy --set=root --file /EFI/BOOT/grub.cfg\nconfigfile /EFI/BOOT/grub.cfg\n' > /tmp/grub-embed.cfg && \
+    grub-mkstandalone \
+        --format=x86_64-efi \
+        --output=/tmp/bootx64.efi \
+        --locales= \
+        --fonts= \
+        'boot/grub/grub.cfg=/tmp/grub-embed.cfg' && \
+    mkdir -p /opt/stackbox && \
+    dd if=/dev/zero of=/opt/stackbox/efiboot.img bs=4096 count=1024 && \
+    mkfs.fat -s 4 -r 512 -S 4096 /opt/stackbox/efiboot.img && \
+    mmd -i /opt/stackbox/efiboot.img ::efi ::efi/boot && \
+    mcopy -i /opt/stackbox/efiboot.img /tmp/bootx64.efi ::efi/boot/bootx64.efi && \
+    rm -f /tmp/grub-embed.cfg /tmp/bootx64.efi
 
 RUN python3 -m venv /opt/stackbox/venv
 ENV PATH="/opt/stackbox/venv/bin:$PATH"

@@ -75,11 +75,146 @@ def _wait_for_ironic(backend: ContainerBackend, env: list[str], timeout: int = 1
     raise BootstrapError(f"Ironic conductor not ready after {timeout}s")
 
 
+def _build_driver_info_args(
+    node: VirtualBMNode,
+    bmc_port: int,
+    deploy_images: dict[str, str] | None = None,
+) -> list[str]:
+    driver = node.bmc.type.value
+    args = []
+    if driver == "redfish":
+        system_id = node.uuid or node.name
+        args = [
+            "--driver-info", f"redfish_address=http://localhost:{bmc_port}",
+            "--driver-info", f"redfish_system_id=/redfish/v1/Systems/{system_id}",
+            "--driver-info", f"redfish_username={node.bmc.username}",
+            "--driver-info", f"redfish_password={node.bmc.password}",
+        ]
+    elif driver == "ipmi":
+        args = [
+            "--driver-info", f"ipmi_address={node.bmc.address}",
+            "--driver-info", f"ipmi_port={node.bmc.port}",
+            "--driver-info", f"ipmi_username={node.bmc.username}",
+            "--driver-info", f"ipmi_password={node.bmc.password}",
+        ]
+    if deploy_images:
+        if "deploy_kernel" in deploy_images:
+            args += ["--driver-info", f"deploy_kernel={deploy_images['deploy_kernel']}"]
+        if "deploy_ramdisk" in deploy_images:
+            args += ["--driver-info", f"deploy_ramdisk={deploy_images['deploy_ramdisk']}"]
+    return args
+
+
+def _update_existing_node(
+    backend: ContainerBackend,
+    env: list[str],
+    node: VirtualBMNode,
+    bmc_port: int,
+    deploy_images: dict[str, str] | None = None,
+) -> None:
+    set_cmd = env + [
+        "openstack", "baremetal", "node", "set", node.name,
+        "--property", f"memory_mb={node.ram_mb}",
+        "--property", f"cpus={node.vcpus}",
+        "--property", f"local_gb={node.disk_gb}",
+        "--property", "cpu_arch=x86_64",
+    ]
+    for arg in _build_driver_info_args(node, bmc_port, deploy_images):
+        set_cmd.append(arg)
+    backend.exec(CONTAINER, set_cmd)
+
+    if node.mac_address:
+        ec, out = backend.exec(
+            CONTAINER,
+            env + ["openstack", "baremetal", "port", "list",
+                   "--node", node.name, "-f", "value", "-c", "UUID", "-c", "Address"],
+        )
+        if ec == 0 and out.strip():
+            has_correct_port = False
+            for line in out.strip().splitlines():
+                parts = line.strip().split()
+                if len(parts) == 2:
+                    port_uuid, mac = parts
+                    if mac == node.mac_address:
+                        has_correct_port = True
+                    else:
+                        log.info("Deleting stale port %s (MAC %s)", port_uuid, mac)
+                        _exec_or_fail(backend, env + [
+                            "openstack", "baremetal", "port", "delete", port_uuid,
+                        ], f"delete stale port {port_uuid}")
+
+            if not has_correct_port and node.mac_address:
+                node_uuid = _exec_or_fail(
+                    backend,
+                    env + ["openstack", "baremetal", "node", "show", node.name,
+                           "-f", "value", "-c", "uuid"],
+                    f"get uuid for {node.name}",
+                ).strip()
+                log.info("Creating port for %s with MAC %s", node.name, node.mac_address)
+                _exec_or_fail(backend, env + [
+                    "openstack", "baremetal", "port", "create",
+                    "--node", node_uuid, node.mac_address,
+                ], f"create port for {node.name}")
+
+    ec, out = backend.exec(
+        CONTAINER,
+        env + ["openstack", "baremetal", "node", "show", node.name,
+               "-f", "value", "-c", "maintenance"],
+    )
+    if ec == 0 and out.strip().lower() == "true":
+        log.info("Clearing maintenance mode on %s", node.name)
+        backend.exec(CONTAINER, env + [
+            "openstack", "baremetal", "node", "maintenance", "unset", node.name,
+        ])
+
+
+def _wait_for_power_sync(
+    backend: ContainerBackend,
+    env: list[str],
+    node_names: list[str],
+    timeout: int = 180,
+) -> None:
+    deadline = time.monotonic() + timeout
+    pending = set(node_names)
+    while pending and time.monotonic() < deadline:
+        for name in list(pending):
+            ec, out = backend.exec(
+                CONTAINER,
+                env + ["openstack", "baremetal", "node", "show", name,
+                       "-f", "value", "-c", "maintenance", "-c", "power_state"],
+            )
+            if ec != 0:
+                continue
+            lines = out.strip().splitlines()
+            if len(lines) < 2:
+                continue
+            maintenance = lines[0].strip().lower()
+            power_state = lines[1].strip()
+
+            if maintenance == "true":
+                log.info("Node %s back in maintenance, clearing again", name)
+                backend.exec(CONTAINER, env + [
+                    "openstack", "baremetal", "node", "maintenance", "unset", name,
+                ])
+                continue
+
+            if power_state.lower() not in ("none", ""):
+                log.info("Node %s power state synced: %s", name, power_state)
+                pending.discard(name)
+
+        if pending:
+            time.sleep(10)
+
+    if pending:
+        log.warning("Nodes still without power state after %ds: %s", timeout, pending)
+
+
 def enroll_nodes(
     backend: ContainerBackend,
     nodes: list[VirtualBMNode],
     port_manager: PortManager,
     admin_pass: str,
+    deploy_images: dict[str, str] | None = None,
 ) -> None:
     ks_port = port_manager.get("keystone")
     bmc_port = port_manager.get("sushy-tools")
@@ -94,38 +229,22 @@ def enroll_nodes(
                    "-f", "value", "-c", "provision_state"],
         )
         if exit_code == 0:
-            log.info("Node %s already exists (state=%s), skipping", node.name, output.strip())
+            log.info("Node %s already exists (state=%s), updating", node.name, output.strip())
+            _update_existing_node(backend, env, node, bmc_port, deploy_images)
             continue
 
-        driver = node.bmc.type.value
-        redfish_addr = f"http://localhost:{bmc_port}"
-
-        driver_info_args = []
-        if driver == "redfish":
-            system_id = node.uuid or node.name
-            driver_info_args = [
-                "--driver-info", f"redfish_address={redfish_addr}",
-                "--driver-info", f"redfish_system_id=/redfish/v1/Systems/{system_id}",
-                "--driver-info", f"redfish_username={node.bmc.username}",
-                "--driver-info", f"redfish_password={node.bmc.password}",
-            ]
-        elif driver == "ipmi":
-            driver_info_args = [
-                "--driver-info", f"ipmi_address={node.bmc.address}",
-                "--driver-info", f"ipmi_port={node.bmc.port}",
-                "--driver-info", f"ipmi_username={node.bmc.username}",
-                "--driver-info", f"ipmi_password={node.bmc.password}",
-            ]
+        driver_info_args = _build_driver_info_args(node, bmc_port, deploy_images)
 
         create_cmd = env + [
             "openstack", "baremetal", "node", "create",
-            "--driver", driver,
+            "--driver", node.bmc.type.value,
             "--boot-interface", node.boot_mode,
             "--name", node.name,
             "--resource-class", "baremetal",
             "--property", f"memory_mb={node.ram_mb}",
             "--property", f"cpus={node.vcpus}",
             "--property", f"local_gb={node.disk_gb}",
+            "--property", "cpu_arch=x86_64",
             "-f", "value", "-c", "uuid",
         ] + driver_info_args
 
@@ -150,6 +269,7 @@ def enroll_nodes(
 
         _wait_for_state(backend, env, node.name, "available")
 
-        log.info("Enrolled node %s (driver=%s, mac=%s)", node.name, driver, node.mac_address)
+        log.info("Enrolled node %s (driver=%s, mac=%s)", node.name, node.bmc.type.value, node.mac_address)
 
+    _wait_for_power_sync(backend, env, [n.name for n in nodes])
     log.info("All %d nodes enrolled and available", len(nodes))

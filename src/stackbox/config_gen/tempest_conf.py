@@ -32,17 +32,21 @@ class TempestConfigGenerator(ServiceConfigGenerator):
             "endpoint_type": "internal",
             "min_microversion": "1.1",
             "max_microversion": "latest",
+            "whole_disk_image_ref": "{{test_image_uuid}}",
+            "whole_disk_image_url": "http://download.cirros-cloud.net/0.6.2/cirros-0.6.2-x86_64-disk.img",
         }
 
         config["compute"] = {
             "flavor_ref": "{{baremetal_flavor_uuid}}",
             "image_ref": "{{test_image_uuid}}",
+            "fixed_network_name": "provisioning",
             "min_compute_nodes": str(self.job.vm_specs.count),
         }
 
         config["compute-feature-enabled"] = {
             "vnc_console": "false",
             "resize": "false",
+            "console_output": "false",
         }
 
         config["service_available"] = {
@@ -63,7 +67,11 @@ class TempestConfigGenerator(ServiceConfigGenerator):
         }
 
         config["validation"] = {
-            "run_validation": "false",
+            "run_validation": "true",
+            "connect_method": "fixed",
+            "network_for_ssh": "provisioning",
+            "ping_timeout": "120",
+            "ssh_timeout": "120",
         }
 
         return {"tempest.conf": self._render(config)}

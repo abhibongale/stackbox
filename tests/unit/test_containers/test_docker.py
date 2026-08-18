@@ -3,17 +3,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from stackbox.containers.podman import PodmanBackend
+from stackbox.containers.docker import DockerBackend
 from stackbox.exceptions import ContainerError
 from stackbox.models.container import ContainerSpec, HealthCheck, VolumeMount
 
 
 @pytest.fixture
 def backend():
-    return PodmanBackend()
+    return DockerBackend()
 
 
-class TestPodmanBackend:
+class TestDockerBackend:
 
     def test_run_builds_basic_command(self, backend):
         spec = ContainerSpec(name="test-ctr", image="test:latest")
@@ -22,7 +22,7 @@ class TestPodmanBackend:
             cid = backend.run(spec)
             assert cid == "abc123"
             cmd = mock_run.call_args[0][0]
-            assert cmd[:4] == ["podman", "run", "-d", "--name"]
+            assert cmd[:4] == ["docker", "run", "-d", "--name"]
             assert "test-ctr" in cmd
             assert "--network" in cmd
             assert "host" in cmd
@@ -77,10 +77,10 @@ class TestPodmanBackend:
             with pytest.raises(ContainerError, match="error msg"):
                 backend.run(spec)
 
-    def test_run_raises_on_missing_podman(self, backend):
-        spec = ContainerSpec(name="nopodman", image="img:1")
+    def test_run_raises_on_missing_docker(self, backend):
+        spec = ContainerSpec(name="nodocker", image="img:1")
         with patch("subprocess.run", side_effect=FileNotFoundError):
-            with pytest.raises(ContainerError, match="podman not found"):
+            with pytest.raises(ContainerError, match="docker not found"):
                 backend.run(spec)
 
     def test_exec_returns_exit_code_and_output(self, backend):
@@ -117,12 +117,21 @@ class TestPodmanBackend:
             result = backend.list_containers("stackbox-")
             assert result == []
 
+    def test_list_containers_ndjson(self, backend):
+        ndjson = '{"Names":"stackbox-keystone"}\n{"Names":"stackbox-glance"}\n'
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=ndjson, stderr="")
+            result = backend.list_containers("stackbox-")
+            assert len(result) == 2
+            assert result[0]["Names"] == "stackbox-keystone"
+            assert result[1]["Names"] == "stackbox-glance"
+
     def test_pull_image(self, backend):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             backend.pull_image("test:latest")
             cmd = mock_run.call_args[0][0]
-            assert cmd == ["podman", "pull", "test:latest"]
+            assert cmd == ["docker", "pull", "test:latest"]
 
     def test_create_volume(self, backend):
         with patch("subprocess.run") as mock_run:
@@ -131,12 +140,12 @@ class TestPodmanBackend:
             mock_run.side_effect = [exists_result, create_result]
             backend.create_volume("testvol")
             assert mock_run.call_count == 2
-            assert mock_run.call_args_list[0][0][0] == ["podman", "volume", "exists", "testvol"]
-            assert mock_run.call_args_list[1][0][0] == ["podman", "volume", "create", "testvol"]
+            assert mock_run.call_args_list[0][0][0] == ["docker", "volume", "inspect", "testvol"]
+            assert mock_run.call_args_list[1][0][0] == ["docker", "volume", "create", "testvol"]
 
     def test_create_volume_already_exists(self, backend):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             backend.create_volume("testvol")
             mock_run.assert_called_once()
-            assert mock_run.call_args[0][0] == ["podman", "volume", "exists", "testvol"]
+            assert mock_run.call_args[0][0] == ["docker", "volume", "inspect", "testvol"]

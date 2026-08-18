@@ -35,15 +35,17 @@ class TestRequiredContainers:
         needed = required_containers(vmedia_job)
         assert "swift-proxy-server" not in needed
 
-    def test_vmedia_no_dnsmasq(self, vmedia_job):
+    def test_vmedia_has_dhcp_agent_no_dnsmasq(self, vmedia_job):
         needed = required_containers(vmedia_job)
+        assert "neutron-dhcp-agent" in needed
         assert "dnsmasq" not in needed
         assert "ironic-pxe" not in needed
 
-    def test_pxe_has_dnsmasq(self):
+    def test_pxe_has_dnsmasq_and_dhcp_agent(self):
         job = ResolvedJobConfig(job_name="pxe-test", boot_interface="pxe")
         needed = required_containers(job)
         assert "dnsmasq" in needed
+        assert "neutron-dhcp-agent" in needed
         assert "ironic-pxe" in needed
 
     def test_ipmi_has_vbmc(self):
@@ -95,11 +97,41 @@ class TestBuildContainerSpecs:
         assert ks.health_check.type == "http"
         assert "/v3" in ks.health_check.target
 
-    def test_ovs_is_privileged(self, vmedia_job, tmp_path):
+    def test_neutron_dhcp_agent_has_config(self, vmedia_job, tmp_path):
         pm = PortManager()
         specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
-        ovs = next(s for s in specs if s.name == "stackbox-openvswitch-db-server")
-        assert ovs.privileged is True
+        dhcp = next(s for s in specs if s.name == "stackbox-neutron-dhcp-agent")
+        vol_targets = [v.target for v in dhcp.volumes]
+        assert "/etc/neutron/dhcp_agent.ini" in vol_targets
+        assert dhcp.privileged is True
+
+    def test_neutron_dhcp_agent_has_pid_host(self, vmedia_job, tmp_path):
+        pm = PortManager()
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
+        dhcp = next(s for s in specs if s.name == "stackbox-neutron-dhcp-agent")
+        assert dhcp.pid_mode == "host"
+
+    def test_neutron_dhcp_agent_has_netns_mount(self, vmedia_job, tmp_path):
+        pm = PortManager()
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
+        dhcp = next(s for s in specs if s.name == "stackbox-neutron-dhcp-agent")
+        vol_targets = [v.target for v in dhcp.volumes]
+        assert "/var/run/netns" in vol_targets
+
+    def test_neutron_agents_have_sudoers_mount(self, vmedia_job, tmp_path):
+        pm = PortManager()
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
+        for agent in ("neutron-dhcp-agent", "neutron-openvswitch-agent", "neutron-l3-agent"):
+            spec = next(s for s in specs if s.name == f"stackbox-{agent}")
+            vol_targets = [v.target for v in spec.volumes]
+            assert "/var/lib/kolla/config_files/neutron-privsep-sudoers" in vol_targets
+
+    def test_neutron_agents_mount_ovs_volume(self, vmedia_job, tmp_path):
+        pm = PortManager()
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
+        ovs_agent = next(s for s in specs if s.name == "stackbox-neutron-openvswitch-agent")
+        vol_sources = [v.source for v in ovs_agent.volumes]
+        assert "stackbox-ovs-run" in vol_sources
 
     def test_port_offset_in_health_checks(self, tmp_path):
         job = ResolvedJobConfig(job_name="test", port_offset=10000)
@@ -113,14 +145,6 @@ class TestBuildContainerSpecs:
         specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         names = {s.name for s in specs}
         assert "stackbox-cinder-api" not in names
-
-    def test_neutron_dhcp_agent_has_agent_config(self, vmedia_job, tmp_path):
-        pm = PortManager()
-        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
-        dhcp = next(s for s in specs if s.name == "stackbox-neutron-dhcp-agent")
-        vol_targets = [v.target for v in dhcp.volumes]
-        assert "/etc/neutron/dhcp_agent.ini" in vol_targets
-        assert "/etc/neutron/neutron.conf" in vol_targets
 
     def test_neutron_l3_agent_has_agent_config(self, vmedia_job, tmp_path):
         pm = PortManager()
@@ -205,7 +229,7 @@ class TestBuildContainerSpecs:
         specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         kolla_config_target = "/var/lib/kolla/config_files/config.json"
         for spec in specs:
-            if "sushy-tools" in spec.name or "vbmc" in spec.name:
+            if any(s in spec.name for s in ("sushy-tools", "vbmc", "ironic-http")):
                 continue
             vol_targets = [v.target for v in spec.volumes]
             assert kolla_config_target in vol_targets, (

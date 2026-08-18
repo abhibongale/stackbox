@@ -45,7 +45,7 @@ class TestRenderDomainXml:
     def test_bios_no_firmware(self, bios_node):
         xml = render_domain_xml(bios_node)
         assert "firmware='efi'" not in xml
-        assert "<type arch='x86_64'>hvm</type>" in xml
+        assert "<type arch='x86_64' machine='q35'>hvm</type>" in xml
 
     def test_disk_image_path(self, uefi_node):
         xml = render_domain_xml(uefi_node)
@@ -67,10 +67,10 @@ class TestRenderDomainXml:
         xml = render_domain_xml(bios_node)
         assert "<mac address=" not in xml
 
-    def test_ovs_bridge(self, uefi_node):
-        xml = render_domain_xml(uefi_node)
-        assert "<source bridge='brbm'/>" in xml
-        assert "<virtualport type='openvswitch'/>" in xml
+    def test_bridge_interface(self, uefi_node):
+        xml = render_domain_xml(uefi_node, bridge="brbm-link")
+        assert "<interface type='bridge'>" in xml
+        assert "<source bridge='brbm-link'/>" in xml
 
     def test_e1000_nic(self, uefi_node):
         xml = render_domain_xml(uefi_node)
@@ -83,3 +83,15 @@ class TestRenderDomainXml:
     def test_kvm_domain_type(self, uefi_node):
         xml = render_domain_xml(uefi_node)
         assert "<domain type='kvm'>" in xml
+
+    def test_cdrom_device_present(self, uefi_node):
+        xml = render_domain_xml(uefi_node)
+        assert "device='cdrom'" in xml
+        assert "<target dev='sda' bus='sata'/>" in xml
+        assert "<readonly/>" in xml
+
+    def test_boot_order_includes_cdrom(self, uefi_node):
+        xml = render_domain_xml(uefi_node)
+        assert "<boot dev='cdrom'/>" in xml
+        assert "<boot dev='network'/>" in xml
+        assert "<boot dev='hd'/>" in xml

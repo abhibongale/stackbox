@@ -6,6 +6,7 @@ import shlex
 from pathlib import Path
 
 from stackbox.config_gen.ports import PortManager
+from stackbox.baremetal.libvirt import VMEDIA_DIR, default_image_dir
 from stackbox.constants import (
     CONTAINER_PREFIX, KOLLA_IMAGES, KOLLA_REGISTRY, KOLLA_RELEASE_OVERRIDES,
     KOLLA_SERVICE_COMMANDS, METAL3_REGISTRY,
@@ -19,8 +20,9 @@ SHARED_VOLUMES = {
     "stackbox-keystone-credential": "/etc/keystone/credential-keys/",
     "stackbox-libvirt-sock": "/var/run/libvirt/",
     "stackbox-libvirt-images": "/var/lib/libvirt/images/",
-    "stackbox-ovs-run": "/var/run/openvswitch/",
     "stackbox-ironic-httpboot": "/var/lib/ironic/httpboot/",
+    "stackbox-glance-images": "/var/lib/glance/images/",
+    "stackbox-ovs-run": "/var/run/openvswitch/",
 }
 
 
@@ -54,11 +56,20 @@ def _shared_vol(vol_name: str) -> VolumeMount:
     return _vol(vol_name, SHARED_VOLUMES[vol_name])
 
 
-def _kolla_config_vol(configs_dir: Path, service: str, command: str) -> VolumeMount:
+def _kolla_config_vol(
+    configs_dir: Path,
+    service: str,
+    command: str,
+    permissions: list[dict] | None = None,
+    config_files: list[dict] | None = None,
+) -> VolumeMount:
     kolla_dir = configs_dir / "kolla"
     kolla_dir.mkdir(parents=True, exist_ok=True)
     config_path = kolla_dir / f"{service}.json"
-    config_path.write_text(json.dumps({"command": command, "config_files": []}))
+    config: dict = {"command": command, "config_files": config_files or []}
+    if permissions:
+        config["permissions"] = permissions
+    config_path.write_text(json.dumps(config))
     return VolumeMount(
         source=str(config_path),
         target="/var/lib/kolla/config_files/config.json",
@@ -74,7 +85,7 @@ def required_containers(job: ResolvedJobConfig) -> set[str]:
         "placement-api",
         "neutron-server", "neutron-dhcp-agent", "neutron-openvswitch-agent", "neutron-l3-agent",
         "nova-api", "nova-scheduler", "nova-conductor", "nova-compute",
-        "ironic-api", "ironic-conductor",
+        "ironic-api", "ironic-conductor", "ironic-http",
         "openvswitch-db-server", "openvswitch-vswitchd",
         "nova-libvirt",
     }
@@ -92,7 +103,8 @@ def required_containers(job: ResolvedJobConfig) -> set[str]:
         containers.update({"cinder-api", "cinder-scheduler", "cinder-volume", "tgtd"})
 
     if job.boot_interface in ("pxe", "ipxe"):
-        containers.update({"ironic-pxe", "dnsmasq"})
+        containers.add("dnsmasq")
+        containers.add("ironic-pxe")
 
     return containers
 
@@ -174,8 +186,12 @@ def build_container_specs(
             image=_image_for("glance-api", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "glance-api.conf", "/etc/glance/glance-api.conf"),
+                _config_vol(configs_dir, "glance-policy.yaml", "/etc/glance/policy.yaml"),
                 _shared_vol("stackbox-ironic-httpboot"),
-                _kolla_config_vol(configs_dir, "glance-api", KOLLA_SERVICE_COMMANDS["glance-api"]),
+                _shared_vol("stackbox-glance-images"),
+                _kolla_config_vol(configs_dir, "glance-api", KOLLA_SERVICE_COMMANDS["glance-api"], permissions=[
+                    {"path": "/var/lib/glance", "owner": "glance:glance", "recurse": True},
+                ]),
             ],
             health_check=HealthCheck(
                 type="http",
@@ -230,19 +246,38 @@ def build_container_specs(
         ],
     }
 
+    _sudoers_config_files = [{
+        "source": "/var/lib/kolla/config_files/neutron-privsep-sudoers",
+        "dest": "/etc/sudoers.d/neutron-privsep",
+        "owner": "root",
+        "perm": "0440",
+    }]
+
     for agent in ("neutron-dhcp-agent", "neutron-openvswitch-agent", "neutron-l3-agent"):
         if agent in needed:
             vols = [
                 _config_vol(configs_dir, "neutron.conf", "/etc/neutron/neutron.conf"),
                 _config_vol(configs_dir, "ml2_conf.ini", "/etc/neutron/plugins/ml2/ml2_conf.ini"),
+                _config_vol(
+                    configs_dir, "neutron-privsep-sudoers",
+                    "/var/lib/kolla/config_files/neutron-privsep-sudoers",
+                ),
                 _shared_vol("stackbox-ovs-run"),
-                _kolla_config_vol(configs_dir, agent, KOLLA_SERVICE_COMMANDS[agent]),
+                _kolla_config_vol(
+                    configs_dir, agent, KOLLA_SERVICE_COMMANDS[agent],
+                    config_files=_sudoers_config_files,
+                ),
             ] + _neutron_agent_configs.get(agent, [])
+            extra_opts: dict = {}
+            if agent == "neutron-dhcp-agent":
+                vols.append(_vol("/var/run/netns", "/var/run/netns", "shared"))
+                extra_opts["pid_mode"] = "host"
             specs.append(ContainerSpec(
                 name=_name(agent),
                 image=_image_for(agent, release, image_overrides),
                 privileged=True,
                 volumes=vols,
+                **extra_opts,
             ))
 
     for svc in ("nova-api", "nova-scheduler", "nova-conductor"):
@@ -301,6 +336,22 @@ def build_container_specs(
             ],
         ))
 
+        http_port = port_manager.get("ironic-http")
+        specs.append(ContainerSpec(
+            name=_name("ironic-http"),
+            image=_image_for("ironic-conductor", release, image_overrides),
+            command=["python3", "-m", "http.server", str(http_port),
+                     "--directory", "/var/lib/ironic/httpboot"],
+            volumes=[
+                _shared_vol("stackbox-ironic-httpboot"),
+            ],
+            health_check=HealthCheck(
+                type="http",
+                target=f"http://localhost:{http_port}/",
+                timeout_seconds=30,
+            ),
+        ))
+
     if "openvswitch-db-server" in needed:
         specs.append(ContainerSpec(
             name=_name("openvswitch-db-server"),
@@ -347,18 +398,25 @@ def build_container_specs(
             "sushy-tools", f"{METAL3_REGISTRY}/sushy-tools:latest",
         )
         libvirt_run_dir = f"/run/user/{os.getuid()}/libvirt"
+        image_dir = default_image_dir()
+        vmedia_dir = VMEDIA_DIR
+        Path(vmedia_dir).mkdir(parents=True, exist_ok=True)
         specs.append(ContainerSpec(
             name=_name("sushy-tools"),
             image=sushy_image,
+            user=f"{os.getuid()}:{os.getgid()}",
             volumes=[
                 _config_vol(configs_dir, "emulator.conf", "/etc/sushy/emulator.conf"),
                 _vol(libvirt_run_dir, libvirt_run_dir, ""),
-                _shared_vol("stackbox-libvirt-images"),
+                _vol(image_dir, image_dir, ""),
+                _vol(vmedia_dir, vmedia_dir, ""),
                 _shared_vol("stackbox-ironic-httpboot"),
             ],
-            environment={"SUSHY_TOOLS_CONFIG": "/etc/sushy/emulator.conf"},
+            environment={
+                "SUSHY_TOOLS_CONFIG": "/etc/sushy/emulator.conf",
+                "TMPDIR": vmedia_dir,
+            },
             security_opts=["label=disable"],
-            extra_args=["--userns=keep-id"],
             health_check=HealthCheck(
                 type="tcp", target=str(port_manager.get("sushy-tools")), timeout_seconds=60,
             ),

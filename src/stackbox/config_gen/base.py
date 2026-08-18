@@ -44,6 +44,11 @@ class ServiceConfigGenerator(ABC):
             "rabbit_password": self._rabbit_pass(),
         }
 
+        config["oslo_policy"] = {
+            "enforce_scope": "false",
+            "enforce_new_defaults": "false",
+        }
+
         return config
 
     def _render(self, config: ConfigParser) -> str:

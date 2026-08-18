@@ -19,6 +19,8 @@ class ContainerSpec(BaseModel):
     image: str
     network: str = "host"
     privileged: bool = False
+    pid_mode: str | None = None
+    user: str | None = None
     volumes: list[VolumeMount] = []
     environment: dict[str, str] = {}
     command: list[str] | None = None

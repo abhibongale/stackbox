@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from stackbox.baremetal.enrollment import enroll_nodes, _os_env, _wait_for_ironic, _wait_for_state
+from stackbox.baremetal.enrollment import enroll_nodes, _os_env, _wait_for_ironic, _wait_for_state, _wait_for_power_sync
 from stackbox.config_gen.ports import PortManager
 from stackbox.exceptions import BootstrapError
 from stackbox.models.baremetal import BMCConfig, BMCType, VirtualBMNode
@@ -94,9 +94,10 @@ class TestWaitForIronic:
 
 class TestEnrollNodes:
 
+    @patch("stackbox.baremetal.enrollment._wait_for_power_sync")
     @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_redfish_enrollment(self, mock_wait, mock_wait_ironic, mock_backend, redfish_node):
+    def test_redfish_enrollment(self, mock_wait, mock_wait_ironic, mock_power, mock_backend, redfish_node):
         pm = PortManager()
         enroll_nodes(mock_backend, [redfish_node], pm, "admin_pass")
 
@@ -108,9 +109,10 @@ class TestEnrollNodes:
         assert "redfish_address" in cmd_str
         assert f"redfish_system_id=/redfish/v1/Systems/{redfish_node.uuid}" in cmd_str
 
+    @patch("stackbox.baremetal.enrollment._wait_for_power_sync")
     @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_redfish_falls_back_to_name_without_uuid(self, mock_wait, mock_wait_ironic, mock_backend):
+    def test_redfish_falls_back_to_name_without_uuid(self, mock_wait, mock_wait_ironic, mock_power, mock_backend):
         node = VirtualBMNode(
             name="stackbox-bm-0",
             mac_address="52:54:00:aa:bb:cc",
@@ -124,9 +126,10 @@ class TestEnrollNodes:
         cmd_str = " ".join(create_calls[0][0][1])
         assert f"redfish_system_id=/redfish/v1/Systems/{node.name}" in cmd_str
 
+    @patch("stackbox.baremetal.enrollment._wait_for_power_sync")
     @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_ipmi_enrollment(self, mock_wait, mock_wait_ironic, mock_backend, ipmi_node):
+    def test_ipmi_enrollment(self, mock_wait, mock_wait_ironic, mock_power, mock_backend, ipmi_node):
         pm = PortManager()
         enroll_nodes(mock_backend, [ipmi_node], pm, "admin_pass")
 
@@ -136,9 +139,10 @@ class TestEnrollNodes:
         assert "ipmi" in cmd_str
         assert "ipmi_address" in cmd_str
 
+    @patch("stackbox.baremetal.enrollment._wait_for_power_sync")
     @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_creates_port(self, mock_wait, mock_wait_ironic, mock_backend, redfish_node):
+    def test_creates_port(self, mock_wait, mock_wait_ironic, mock_power, mock_backend, redfish_node):
         pm = PortManager()
         enroll_nodes(mock_backend, [redfish_node], pm, "admin_pass")
 
@@ -147,9 +151,10 @@ class TestEnrollNodes:
         assert len(port_calls) == 1
         assert "52:54:00:aa:bb:cc" in " ".join(port_calls[0][0][1])
 
+    @patch("stackbox.baremetal.enrollment._wait_for_power_sync")
     @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_manage_and_provide(self, mock_wait, mock_wait_ironic, mock_backend, redfish_node):
+    def test_manage_and_provide(self, mock_wait, mock_wait_ironic, mock_power, mock_backend, redfish_node):
         pm = PortManager()
         enroll_nodes(mock_backend, [redfish_node], pm, "admin_pass")
 
@@ -159,8 +164,9 @@ class TestEnrollNodes:
         assert any("node provide" in cmd for cmd in all_cmds)
         assert mock_wait.call_count == 2
 
+    @patch("stackbox.baremetal.enrollment._wait_for_power_sync")
     @patch("stackbox.baremetal.enrollment._wait_for_ironic")
-    def test_raises_on_create_failure(self, mock_wait_ironic, mock_backend, redfish_node):
+    def test_raises_on_create_failure(self, mock_wait_ironic, mock_power, mock_backend, redfish_node):
         pm = PortManager()
         call_count = [0]
 
@@ -174,9 +180,10 @@ class TestEnrollNodes:
         with pytest.raises(BootstrapError, match="create node"):
             enroll_nodes(mock_backend, [redfish_node], pm, "admin_pass")
 
+    @patch("stackbox.baremetal.enrollment._wait_for_power_sync")
     @patch("stackbox.baremetal.enrollment._wait_for_ironic")
     @patch("stackbox.baremetal.enrollment._wait_for_state")
-    def test_multiple_nodes(self, mock_wait, mock_wait_ironic, mock_backend):
+    def test_multiple_nodes(self, mock_wait, mock_wait_ironic, mock_power, mock_backend):
         pm = PortManager()
         nodes = [
             VirtualBMNode(name=f"stackbox-bm-{i}", mac_address=f"52:54:00:aa:bb:{i:02x}")

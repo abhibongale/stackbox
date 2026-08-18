@@ -57,9 +57,9 @@ class TestEndToEnd:
         _, _, generated = vmedia_job
         assert "proxy-server.conf" in generated
 
-    def test_dnsmasq_excluded_for_vmedia(self, vmedia_job):
+    def test_dnsmasq_included_for_vmedia(self, vmedia_job):
         _, _, generated = vmedia_job
-        assert "dnsmasq.conf" not in generated
+        assert "dnsmasq.conf" in generated
 
     def test_cinder_excluded_for_vmedia(self, vmedia_job):
         _, _, generated = vmedia_job
@@ -177,11 +177,13 @@ class TestEndToEnd:
 
     # -- glance --
 
-    def test_glance_swift_backend(self, vmedia_job):
+    def test_glance_file_backend(self, vmedia_job):
         _, out, _ = vmedia_job
         config = ConfigParser()
         config.read(out / "glance-api.conf")
-        assert config["glance_store"]["default_backend"] == "swift"
+        assert config["glance_store"]["default_backend"] == "file"
+        assert config["DEFAULT"]["enabled_backends"] == "file:file"
+        assert config["file"]["filesystem_store_datadir"] == "/var/lib/glance/images/"
 
 
 class TestWithPortOffset:

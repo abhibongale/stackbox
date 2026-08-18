@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from stackbox.config_gen.base import ServiceConfigGenerator
 from stackbox.config_gen.translator import DevStackTranslator
+from stackbox.models.network import NetworkConfig
 
 
 class IronicConfigGenerator(ServiceConfigGenerator):
@@ -9,6 +10,7 @@ class IronicConfigGenerator(ServiceConfigGenerator):
     def generate(self) -> dict[str, str]:
         config = self._base_config("ironic")
         lr = self.job.devstack_localrc
+        provisioning_ip = NetworkConfig().provisioning_subnet.gateway
 
         boot_ifaces = lr.get(
             "IRONIC_ENABLED_BOOT_INTERFACES", "redfish-virtual-media")
@@ -27,7 +29,9 @@ class IronicConfigGenerator(ServiceConfigGenerator):
             "enabled_power_interfaces": lr.get(
                 "IRONIC_ENABLED_POWER_INTERFACES", "redfish"),
             "auth_strategy": "keystone",
-            "my_ip": "0.0.0.0",
+            "my_ip": provisioning_ip,
+            "esp_image": "/opt/stackbox/efiboot.img",
+            "kernel_append_params": "nofb nomodeset vga=normal console=ttyS0,115200",
         })
 
         config["conductor"] = {
@@ -36,12 +40,12 @@ class IronicConfigGenerator(ServiceConfigGenerator):
         }
 
         config["deploy"] = {
-            "http_url": f"http://localhost:{self.ports.get('ironic-http')}",
+            "http_url": f"http://{provisioning_ip}:{self.ports.get('ironic-http')}",
             "http_root": "/var/lib/ironic/httpboot",
         }
 
         config["service_catalog"] = {
-            "endpoint_override": f"http://localhost:{self.ports.get('ironic-api')}",
+            "endpoint_override": f"http://{provisioning_ip}:{self.ports.get('ironic-api')}",
         }
 
         config["neutron"] = {
@@ -56,9 +60,43 @@ class IronicConfigGenerator(ServiceConfigGenerator):
             "provisioning_network": "provisioning",
         }
 
+        config["glance"] = {
+            "auth_url": f"http://localhost:{self.ports.get('keystone')}",
+            "auth_type": "password",
+            "project_domain_name": "Default",
+            "user_domain_name": "Default",
+            "project_name": "service",
+            "username": "ironic",
+            "password": self._service_pass(),
+            "endpoint_override": f"http://localhost:{self.ports.get('glance')}",
+        }
+
+        config["swift"] = {
+            "auth_url": f"http://localhost:{self.ports.get('keystone')}",
+            "auth_type": "password",
+            "project_domain_name": "Default",
+            "user_domain_name": "Default",
+            "project_name": "service",
+            "username": "ironic",
+            "password": self._service_pass(),
+        }
+
         config["pxe"] = {
-            "tftp_server": "localhost",
+            "tftp_server": provisioning_ip,
             "tftp_root": "/var/lib/ironic/tftpboot",
+            "images_path": "/var/lib/ironic/httpboot/images",
+            "instance_master_path": "/var/lib/ironic/httpboot/master_images",
+        }
+
+        config["nova"] = {
+            "auth_url": f"http://localhost:{self.ports.get('keystone')}/v3",
+            "auth_type": "password",
+            "project_domain_name": "Default",
+            "user_domain_name": "Default",
+            "project_name": "service",
+            "username": "ironic",
+            "password": self._service_pass(),
+            "endpoint_override": f"http://localhost:{self.ports.get('nova-api')}/v2.1",
         }
 
         config["api"] = {

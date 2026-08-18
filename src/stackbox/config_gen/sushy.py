@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 
+from stackbox.baremetal.libvirt import VMEDIA_DIR
 from stackbox.config_gen.base import ServiceConfigGenerator
 
 LIBVIRT_SOCK_PATH = f"/run/user/{os.getuid()}/libvirt/virtqemud-sock"
@@ -26,5 +27,19 @@ SUSHY_EMULATOR_BOOT_LOADER_MAP = {{
     'Legacy': {{'x86_64': None}}
 }}
 SUSHY_EMULATOR_VMEDIA_VERIFY_SSL = False
+SUSHY_EMULATOR_VMEDIA_DEVICES = {{
+    'Cd': {{
+        'Name': 'Virtual CD',
+        'MediaTypes': ['CD', 'DVD'],
+        'Image': '',
+        'ImagePath': '{VMEDIA_DIR}',
+    }},
+    'Floppy': {{
+        'Name': 'Virtual Removable Media',
+        'MediaTypes': ['Floppy', 'USBStick'],
+        'Image': '',
+        'ImagePath': '{VMEDIA_DIR}',
+    }},
+}}
 """
         return {"emulator.conf": content}

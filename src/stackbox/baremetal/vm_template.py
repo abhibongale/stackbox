@@ -10,7 +10,14 @@ DOMAIN_XML = Template("""\
   <memory unit='MiB'>{{ node.ram_mb }}</memory>
   <vcpu>{{ node.vcpus }}</vcpu>
   <os{% if node.firmware == 'uefi' %} firmware='efi'{% endif %}>
-    <type arch='x86_64'>hvm</type>
+    <type arch='x86_64' machine='q35'>hvm</type>
+{% if node.firmware == 'uefi' %}
+    <firmware>
+      <feature enabled='no' name='enrolled-keys'/>
+      <feature enabled='no' name='secure-boot'/>
+    </firmware>
+{% endif %}
+    <boot dev='cdrom'/>
     <boot dev='network'/>
     <boot dev='hd'/>
   </os>
@@ -33,12 +40,15 @@ DOMAIN_XML = Template("""\
       <target dev='vdb' bus='virtio'/>
     </disk>
 {% endif %}
+    <disk type='file' device='cdrom'>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+    </disk>
     <interface type='bridge'>
+      <source bridge='{{ bridge }}'/>
 {% if node.mac_address %}
       <mac address='{{ node.mac_address }}'/>
 {% endif %}
-      <source bridge='brbm'/>
-      <virtualport type='openvswitch'/>
       <model type='e1000'/>
     </interface>
     <serial type='pty'>
@@ -53,5 +63,5 @@ DOMAIN_XML = Template("""\
 """)
 
 
-def render_domain_xml(node: VirtualBMNode, ephemeral_gb: int = 0, image_dir: str = "/var/lib/libvirt/images") -> str:
-    return DOMAIN_XML.render(node=node, ephemeral_gb=ephemeral_gb, image_dir=image_dir)
+def render_domain_xml(node: VirtualBMNode, ephemeral_gb: int = 0, image_dir: str = "/var/lib/libvirt/images", bridge: str = "brbm-link") -> str:
+    return DOMAIN_XML.render(node=node, ephemeral_gb=ephemeral_gb, image_dir=image_dir, bridge=bridge)

@@ -59,13 +59,30 @@ class BootstrapOrchestrator:
         self._stop_dbsync_containers()
 
     def _run_network_phase(self) -> None:
-        setup_ovs_bridges(self.backend, self.manifest)
         create_networks(
             self.backend, NetworkConfig(), self.port_manager, self.admin_pass,
         )
-        setup_resources(self.backend, self.job, self.port_manager, self.admin_pass)
+        resolved = setup_resources(self.backend, self.job, self.port_manager, self.admin_pass)
+        self._deploy_images = {
+            k: v for k, v in resolved.items() if k in ("deploy_kernel", "deploy_ramdisk")
+        }
+        placeholders = {k: v for k, v in resolved.items() if k.startswith("{{")}
+        if placeholders:
+            self._patch_tempest_conf(placeholders)
+
+    def _patch_tempest_conf(self, replacements: dict[str, str]) -> None:
+        conf_path = self.configs_dir / "tempest.conf"
+        if not conf_path.exists():
+            return
+        content = conf_path.read_text()
+        for placeholder, value in replacements.items():
+            content = content.replace(placeholder, value)
+        conf_path.write_text(content)
+        log.info("Patched tempest.conf with %d resolved values", len(replacements))
 
     def run(self) -> None:
+        LibvirtManager.ensure_running()
+
         phases = [
             ("Create shared volumes", self._create_volumes),
             ("Start infrastructure", self._start_infrastructure),
@@ -75,7 +92,10 @@ class BootstrapOrchestrator:
             )),
             ("Register service catalog", lambda: register_services(self.backend, self.job, self.port_manager, self.admin_pass)),
             ("Database sync", self._run_dbsync_phase),
-            ("Start services", lambda: start_services(self.backend, self.job, self.specs, self.manifest)),
+            ("Start services", lambda: start_services(
+                self.backend, self.job, self.specs, self.manifest,
+                after_ovs=lambda: setup_ovs_bridges(self.backend, self.manifest),
+            )),
             ("Network and resource setup", self._run_network_phase),
             ("Baremetal VMs and enrollment", self._setup_baremetal),
         ]
@@ -167,7 +187,7 @@ class BootstrapOrchestrator:
 
     def _setup_baremetal(self) -> None:
         LibvirtManager.ensure_running()
-        libvirt = LibvirtManager()
+        libvirt = LibvirtManager(backend=self.backend)
         nodes = libvirt.create_nodes(self.job.vm_specs)
         for node in nodes:
             self.manifest.record_domain(node.name)
@@ -181,8 +201,69 @@ class BootstrapOrchestrator:
         bmc_port = self.port_manager.get("sushy-tools") if bmc_type == BMCType.REDFISH else 0
         wait_for_bmc(bmc_type, bmc_port)
 
-        enroll_nodes(self.backend, nodes, self.port_manager, self.admin_pass)
+        deploy_images = getattr(self, "_deploy_images", None)
+        enroll_nodes(self.backend, nodes, self.port_manager, self.admin_pass, deploy_images)
         log.info("Baremetal setup complete: %d nodes enrolled", len(nodes))
+
+        self._sync_nova_compute()
+
+    def _sync_nova_compute(self) -> None:
+        by_name = self._specs_by_name()
+        spec = by_name.get("stackbox-nova-compute")
+        if spec is None:
+            return
+
+        log.info("Restarting nova-compute to sync Ironic nodes...")
+        self.backend.run(spec)
+
+        time.sleep(15)
+
+        if not self.backend.is_running("stackbox-nova-compute"):
+            logs = self.backend.logs("stackbox-nova-compute", tail=50)
+            log.warning("nova-compute is not running after restart! Logs:\n%s", logs)
+            return
+
+        log.info("Re-discovering compute hosts...")
+        exit_code, output = self.backend.exec(
+            "stackbox-nova-api",
+            ["nova-manage", "cell_v2", "discover_hosts", "--verbose"],
+        )
+        if exit_code != 0:
+            log.warning("discover_hosts returned %d: %s", exit_code, output)
+
+        self._wait_for_hypervisors()
+
+    def _wait_for_hypervisors(self, timeout: int = 120) -> None:
+        env = [
+            "env",
+            f"OS_AUTH_URL=http://localhost:{self.port_manager.get('keystone')}/v3",
+            f"OS_PASSWORD={self.admin_pass}",
+            "OS_USERNAME=admin",
+            "OS_PROJECT_NAME=admin",
+            "OS_USER_DOMAIN_NAME=Default",
+            "OS_PROJECT_DOMAIN_NAME=Default",
+            "OS_IDENTITY_API_VERSION=3",
+        ]
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self.backend.is_running("stackbox-nova-compute"):
+                logs = self.backend.logs("stackbox-nova-compute", tail=50)
+                log.warning("nova-compute died! Logs:\n%s", logs)
+                return
+
+            ec, out = self.backend.exec(
+                "stackbox-keystone",
+                env + ["openstack", "hypervisor", "list", "-f", "value", "-c", "Hypervisor Hostname"],
+            )
+            if ec == 0 and out.strip():
+                hypervisors = [l.strip() for l in out.strip().splitlines() if l.strip()]
+                if hypervisors:
+                    log.info("Hypervisors available: %s", hypervisors)
+                    return
+            time.sleep(10)
+        log.warning("No hypervisors found after %ds", timeout)
+        logs = self.backend.logs("stackbox-nova-compute", tail=50)
+        log.warning("nova-compute logs:\n%s", logs)
 
     _DBSYNC_CONTAINERS = [
         "stackbox-glance-api",

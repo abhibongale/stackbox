@@ -1,15 +1,14 @@
 # STACKBOX
 
-Run OpenStack Ironic upstream Zuul CI jobs locally in Podman containers.
+Run OpenStack Ironic upstream Zuul CI jobs locally in Docker containers.
 
 STACKBOX fetches job definitions from the Zuul API, generates the matching service configurations, and bootstraps a full Ironic development environment using containerized OpenStack services. It can also reproduce specific CI failures from a Zuul build URL.
 
 ## Prerequisites
 
 - Python 3.10+
-- Podman
+- Docker
 - libvirt with QEMU/KVM (`/dev/kvm` must be accessible)
-- Open vSwitch (`ovs-vsctl`)
 - At least 16 GB RAM (each baremetal VM uses 1-3 GB)
 
 ## Installation
@@ -69,6 +68,13 @@ stackbox clean
 
 Run `stackbox <command> --help` for the full list of options per command.
 
+## Supported Boot Modes
+
+| Boot Interface | BMC Driver | Description |
+|---------------|------------|-------------|
+| `redfish-virtual-media` | `redfish` | UEFI virtual media boot via sushy-tools |
+| `pxe` / `ipxe` | `ipmi` | PXE/iPXE boot via VBMC and dnsmasq |
+
 ## Local Development
 
 Use `--local-repo` to build and run services from local source checkouts:
@@ -105,7 +111,7 @@ Zuul API --> Job Resolution --> Config Generation --> Container Orchestration --
 1. **Zuul API** (`zuul/`): Fetches job definitions from `zuul.opendev.org`
 2. **Job Resolution** (`zuul/freeze.py`): Resolves parent jobs, merges variables into `ResolvedJobConfig`
 3. **Config Generation** (`config_gen/`): Generates INI configs (ironic.conf, nova.conf, etc.) from job variables
-4. **Container Orchestration** (`bootstrap/`): 8-phase bootstrap sequence using Podman containers
+4. **Container Orchestration** (`bootstrap/`): 8-phase bootstrap sequence using Docker containers
 5. **Tempest** (`tempest/`): Runs tempest tests against the deployed environment
 
 ### Bootstrap Phases
@@ -118,6 +124,25 @@ Zuul API --> Job Resolution --> Config Generation --> Container Orchestration --
 6. Start services (all OpenStack services in dependency order)
 7. Network and resource setup (OVS bridges, provisioning network, flavors)
 8. Baremetal VMs and enrollment (libvirt VMs, BMC, node enrollment)
+
+### Networking
+
+STACKBOX sets up a flat provisioning network using OVS bridges:
+
+```
+VMs <--> brbm-link <--> veth <--> brbm (OVS) <--> br-int (OVS) <--> Neutron agents
+```
+
+The Neutron DHCP agent runs dnsmasq inside a `qdhcp-*` network namespace, serving
+IP addresses from Neutron's port database. This ensures VMs always get the IP that
+Neutron assigned to their port, which is required for tempest SSH validation.
+
+### Container Runtime
+
+STACKBOX uses Docker as its container runtime. All OpenStack services run in
+[Kolla](https://docs.openstack.org/kolla/latest/) container images. Kolla's
+`config_files` mechanism is used to install configuration files with correct
+ownership and permissions at container startup.
 
 ## Configuration
 

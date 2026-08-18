@@ -37,12 +37,12 @@ GENERATORS = {
     "rabbitmq": RabbitMQConfigGenerator,
     "sushy": SushyConfigGenerator,
     "tempest": TempestConfigGenerator,
+    "dnsmasq": DnsmasqConfigGenerator,
 }
 
 CONDITIONAL_GENERATORS = {
     "swift": (SwiftConfigGenerator, lambda job: job.devstack_services.get("s-proxy", False)),
     "cinder": (CinderConfigGenerator, lambda job: job.devstack_services.get("c-api", False)),
-    "dnsmasq": (DnsmasqConfigGenerator, lambda job: job.boot_interface in ("pxe", "ipxe")),
 }
 
 

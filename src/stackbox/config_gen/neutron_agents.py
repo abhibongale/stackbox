@@ -11,14 +11,6 @@ class NeutronAgentConfigGenerator(ServiceConfigGenerator):
         lr = self.job.devstack_localrc
         bridge_mappings = lr.get("Q_ML2_OVS_BRIDGE_MAPPINGS", "physnet1:brbm")
 
-        dhcp = ConfigParser()
-        dhcp.optionxform = str
-        dhcp["DEFAULT"] = {
-            "interface_driver": "openvswitch",
-            "enable_isolated_metadata": "True",
-            "force_metadata": "True",
-        }
-
         l3 = ConfigParser()
         l3.optionxform = str
         l3["DEFAULT"] = {
@@ -41,8 +33,16 @@ class NeutronAgentConfigGenerator(ServiceConfigGenerator):
             "firewall_driver": "noop",
         }
 
+        dhcp = ConfigParser()
+        dhcp.optionxform = str
+        dhcp["DEFAULT"] = {
+            "interface_driver": "openvswitch",
+            "dhcp_driver": "neutron.agent.linux.dhcp.Dnsmasq",
+            "enable_isolated_metadata": "True",
+        }
+
         return {
-            "dhcp_agent.ini": self._render(dhcp),
             "l3_agent.ini": self._render(l3),
             "openvswitch_agent.ini": self._render(ovs_agent),
+            "dhcp_agent.ini": self._render(dhcp),
         }

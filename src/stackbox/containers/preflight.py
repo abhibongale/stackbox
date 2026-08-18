@@ -22,22 +22,16 @@ def _cmd_exists(cmd: str, args: list[str] | None = None) -> bool:
         return False
 
 
-def check_podman() -> None:
-    if not _cmd_exists("podman"):
-        raise PreflightError("podman is not installed or not in PATH")
-    log.info("podman: OK")
+def check_docker() -> None:
+    if not _cmd_exists("docker"):
+        raise PreflightError("docker is not installed or not in PATH")
+    log.info("docker: OK")
 
 
 def check_libvirt() -> None:
     if not _cmd_exists("virsh", ["version"]):
         raise PreflightError("libvirt (virsh) is not installed or not in PATH")
     log.info("libvirt: OK")
-
-
-def check_ovs() -> None:
-    if not _cmd_exists("ovs-vsctl", ["--version"]):
-        raise PreflightError("Open vSwitch (ovs-vsctl) is not installed or not in PATH")
-    log.info("ovs: OK")
 
 
 def check_kvm() -> None:
@@ -81,13 +75,33 @@ def check_ports(port_manager: PortManager, services: set[str] | None = None) -> 
     log.info("ports: OK (no conflicts)")
 
 
+def check_qemu_bridge_acl(bridge: str = "brbm-link") -> None:
+    from pathlib import Path
+
+    acl_path = Path("/etc/qemu/bridge.conf")
+    if not acl_path.exists():
+        raise PreflightError(
+            f"{acl_path} not found. Create it with:\n"
+            f"  sudo mkdir -p /etc/qemu\n"
+            f"  echo 'allow {bridge}' | sudo tee /etc/qemu/bridge.conf"
+        )
+    content = acl_path.read_text()
+    if f"allow {bridge}" not in content and "allow all" not in content:
+        raise PreflightError(
+            f"QEMU bridge ACL ({acl_path}) does not allow bridge '{bridge}'.\n"
+            f"Add it with:\n"
+            f"  echo 'allow {bridge}' | sudo tee -a /etc/qemu/bridge.conf"
+        )
+    log.info("qemu bridge acl: OK (bridge %s allowed)", bridge)
+
+
 def check_all(job: ResolvedJobConfig, port_manager: PortManager) -> None:
     from stackbox.containers.specs import required_containers
 
-    check_podman()
+    check_docker()
     check_libvirt()
-    check_ovs()
     check_kvm()
+    check_qemu_bridge_acl()
 
     needed = required_containers(job)
     port_keys = set()

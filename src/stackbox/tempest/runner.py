@@ -27,7 +27,7 @@ class TempestRunner:
         tempest_conf: Path,
         test_regex: str,
         results_dir: Path,
-        image: str = "localhost/stackbox-tempest:latest",
+        image: str = "localhost/stackbox-tempest:local",
     ) -> int:
         results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +90,7 @@ class TempestRunner:
 
     def _build_run_cmd(self, spec: ContainerSpec) -> list[str]:
         cmd = [
-            "podman", "run",
+            "docker", "run",
             "--name", spec.name,
             "--network", spec.network,
         ]

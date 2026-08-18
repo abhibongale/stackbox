@@ -6,11 +6,12 @@ from stackbox.models.job_config import ResolvedJobConfig
 
 
 class TestNeutronConfigGenerator:
-    def test_generates_two_files(self, vmedia_job_config, port_manager):
+    def test_generates_three_files(self, vmedia_job_config, port_manager):
         gen = NeutronConfigGenerator(vmedia_job_config, port_manager)
         files = gen.generate()
         assert "neutron.conf" in files
         assert "ml2_conf.ini" in files
+        assert "neutron-privsep-sudoers" in files
 
     def test_core_plugin_ml2(self, vmedia_job_config, port_manager):
         gen = NeutronConfigGenerator(vmedia_job_config, port_manager)
@@ -49,3 +50,21 @@ class TestNeutronConfigGenerator:
         config.optionxform = str
         config.read_string(gen.generate()["ml2_conf.ini"])
         assert config["securitygroup"]["firewall_driver"] == "noop"
+
+    def test_oslo_concurrency_lock_path(self, vmedia_job_config, port_manager):
+        gen = NeutronConfigGenerator(vmedia_job_config, port_manager)
+        config = ConfigParser()
+        config.read_string(gen.generate()["neutron.conf"])
+        assert config["oslo_concurrency"]["lock_path"] == "/var/lib/neutron/lock"
+
+    def test_privsep_uses_sudo(self, vmedia_job_config, port_manager):
+        gen = NeutronConfigGenerator(vmedia_job_config, port_manager)
+        config = ConfigParser()
+        config.read_string(gen.generate()["neutron.conf"])
+        assert "sudo privsep-helper" in config["privsep"]["helper_command"]
+
+    def test_generates_sudoers_file(self, vmedia_job_config, port_manager):
+        gen = NeutronConfigGenerator(vmedia_job_config, port_manager)
+        files = gen.generate()
+        assert "neutron-privsep-sudoers" in files
+        assert "NOPASSWD" in files["neutron-privsep-sudoers"]

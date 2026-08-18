@@ -58,9 +58,9 @@ class TestImageManager:
 
     def test_build_tempest_no_plugin(self, img_mgr):
         tag = img_mgr.build_tempest("/ctx", "Containerfile.tempest")
-        assert tag == "stackbox-tempest:local"
+        assert tag == "localhost/stackbox-tempest:local"
         img_mgr.backend.build_image.assert_called_once_with(
-            tag="stackbox-tempest:local",
+            tag="localhost/stackbox-tempest:local",
             context="/ctx",
             containerfile="Containerfile.tempest",
             build_args={},
@@ -69,7 +69,7 @@ class TestImageManager:
     def test_build_tempest_with_plugin(self, img_mgr):
         tag = img_mgr.build_tempest("/ctx", "Containerfile.tempest", plugin_source="/src/ironic-tempest-plugin")
         img_mgr.backend.build_image.assert_called_once_with(
-            tag="stackbox-tempest:local",
+            tag="localhost/stackbox-tempest:local",
             context="/ctx",
             containerfile="Containerfile.tempest",
             build_args={"TEMPEST_PLUGIN_SOURCE": "/src/ironic-tempest-plugin"},

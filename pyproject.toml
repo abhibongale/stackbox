@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "stackbox"
 version = "0.1.0"
-description = "Run OpenStack Ironic upstream Zuul CI jobs locally in Podman containers"
+description = "Run OpenStack Ironic upstream Zuul CI jobs locally in Docker containers"
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.0",

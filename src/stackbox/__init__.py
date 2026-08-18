@@ -1,1 +1,1 @@
-"""STACKBOX — Run OpenStack Ironic Zuul CI jobs locally in Podman containers."""
+"""STACKBOX — Run OpenStack Ironic Zuul CI jobs locally in Docker containers."""

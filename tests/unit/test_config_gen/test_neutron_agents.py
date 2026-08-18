@@ -10,25 +10,7 @@ class TestNeutronAgentConfigGenerator:
     def test_generates_three_files(self, vmedia_job_config, port_manager):
         gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
         files = gen.generate()
-        assert set(files.keys()) == {"dhcp_agent.ini", "l3_agent.ini", "openvswitch_agent.ini"}
-
-    def test_dhcp_agent_interface_driver(self, vmedia_job_config, port_manager):
-        gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
-        config = ConfigParser()
-        config.read_string(gen.generate()["dhcp_agent.ini"])
-        assert config["DEFAULT"]["interface_driver"] == "openvswitch"
-
-    def test_dhcp_agent_isolated_metadata(self, vmedia_job_config, port_manager):
-        gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
-        config = ConfigParser()
-        config.read_string(gen.generate()["dhcp_agent.ini"])
-        assert config["DEFAULT"]["enable_isolated_metadata"] == "True"
-
-    def test_dhcp_agent_force_metadata(self, vmedia_job_config, port_manager):
-        gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
-        config = ConfigParser()
-        config.read_string(gen.generate()["dhcp_agent.ini"])
-        assert config["DEFAULT"]["force_metadata"] == "True"
+        assert set(files.keys()) == {"l3_agent.ini", "openvswitch_agent.ini", "dhcp_agent.ini"}
 
     def test_l3_agent_interface_driver(self, vmedia_job_config, port_manager):
         gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
@@ -69,6 +51,24 @@ class TestNeutronAgentConfigGenerator:
         config.optionxform = str
         config.read_string(gen.generate()["openvswitch_agent.ini"])
         assert config["agent"]["tunnel_types"] == "vxlan"
+
+    def test_dhcp_agent_interface_driver(self, vmedia_job_config, port_manager):
+        gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
+        config = ConfigParser()
+        config.read_string(gen.generate()["dhcp_agent.ini"])
+        assert config["DEFAULT"]["interface_driver"] == "openvswitch"
+
+    def test_dhcp_agent_uses_dnsmasq_driver(self, vmedia_job_config, port_manager):
+        gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
+        config = ConfigParser()
+        config.read_string(gen.generate()["dhcp_agent.ini"])
+        assert config["DEFAULT"]["dhcp_driver"] == "neutron.agent.linux.dhcp.Dnsmasq"
+
+    def test_dhcp_agent_isolated_metadata(self, vmedia_job_config, port_manager):
+        gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
+        config = ConfigParser()
+        config.read_string(gen.generate()["dhcp_agent.ini"])
+        assert config["DEFAULT"]["enable_isolated_metadata"] == "True"
 
     def test_custom_bridge_mappings_from_localrc(self, port_manager):
         job = ResolvedJobConfig(

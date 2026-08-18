@@ -48,8 +48,8 @@ class TestBootstrapOrchestrator:
     def test_create_volumes(self, mock_backend, job, manifest, tmp_path):
         orch = BootstrapOrchestrator(mock_backend, job, tmp_path, manifest)
         orch._create_volumes()
-        assert mock_backend.create_volume.call_count == 7
-        assert len(manifest.volumes) == 7
+        assert mock_backend.create_volume.call_count == 8
+        assert len(manifest.volumes) == 8
 
     @patch("stackbox.bootstrap.orchestrator.init_database")
     @patch("stackbox.bootstrap.orchestrator.check")
@@ -89,6 +89,8 @@ class TestBootstrapOrchestrator:
         mock_register.assert_called_once()
         mock_dbsync.assert_called_once()
         mock_services.assert_called_once()
+        assert mock_services.call_args.kwargs.get("after_ovs") is not None
+        mock_services.call_args.kwargs["after_ovs"]()
         mock_ovs.assert_called_once()
         mock_networks.assert_called_once()
         mock_resources.assert_called_once()

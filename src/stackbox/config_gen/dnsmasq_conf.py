@@ -1,52 +1,31 @@
 from __future__ import annotations
 
-import ipaddress
-
 from stackbox.config_gen.base import ServiceConfigGenerator
-
-
-def _parse_dhcp_range(fixed_range: str) -> tuple[str, str, str]:
-    try:
-        network = ipaddress.ip_network(fixed_range, strict=False)
-    except ValueError:
-        return ("10.0.0.50", "10.0.0.150", "255.255.255.248")
-    hosts = list(network.hosts())
-    if len(hosts) < 4:
-        return ("10.0.0.50", "10.0.0.150", "255.255.255.248")
-    start = hosts[len(hosts) // 4]
-    end = hosts[-2]
-    netmask = str(network.netmask)
-    return (str(start), str(end), netmask)
-
-
-def _gateway(fixed_range: str) -> str:
-    try:
-        network = ipaddress.ip_network(fixed_range, strict=False)
-    except ValueError:
-        return "10.0.0.1"
-    hosts = list(network.hosts())
-    return str(hosts[0]) if hosts else "10.0.0.1"
+from stackbox.models.network import NetworkConfig
 
 
 class DnsmasqConfigGenerator(ServiceConfigGenerator):
 
     def generate(self) -> dict[str, str]:
-        lr = self.job.devstack_localrc
-        fixed_range = lr.get("FIXED_RANGE", "10.0.0.0/29")
-        gw = lr.get("NETWORK_GATEWAY") or _gateway(fixed_range)
-        start, end, prefix = _parse_dhcp_range(fixed_range)
+        net = NetworkConfig()
+        subnet = net.provisioning_subnet
 
-        content = f"""\
-port=0
-interface=brbm
-bind-interfaces
-dhcp-range={start},{end},{prefix}
-dhcp-sequential-ip
-dhcp-option=option:router,{gw}
-dhcp-option=option:dns-server,{gw}
-enable-tftp
-tftp-root=/var/lib/ironic/tftpboot
-log-facility=/var/log/dnsmasq.log
-log-dhcp
-"""
-        return {"dnsmasq.conf": content}
+        lines = [
+            "port=0",
+            "interface=brbm-link",
+            "bind-dynamic",
+            f"dhcp-range={subnet.allocation_pool_start},{subnet.allocation_pool_end},255.255.255.0,10m",
+            "dhcp-sequential-ip",
+            f"dhcp-option=option:router,{subnet.gateway}",
+            "dhcp-option=option:dns-server",
+            "log-facility=/var/log/dnsmasq.log",
+            "log-dhcp",
+        ]
+
+        if self.job.boot_interface in ("pxe", "ipxe"):
+            lines += [
+                "enable-tftp",
+                "tftp-root=/var/lib/ironic/tftpboot",
+            ]
+
+        return {"dnsmasq.conf": "\n".join(lines) + "\n"}

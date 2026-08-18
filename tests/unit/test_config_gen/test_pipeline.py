@@ -23,15 +23,16 @@ class TestConfigPipeline:
             "glance-api.conf",
             "neutron.conf",
             "ml2_conf.ini",
+            "neutron-privsep-sudoers",
             "placement.conf",
             "init.sql",
             "rabbitmq.conf",
             "definitions.json",
             "emulator.conf",
             "tempest.conf",
-            "dhcp_agent.ini",
             "l3_agent.ini",
             "openvswitch_agent.ini",
+            "dhcp_agent.ini",
             "libvirtd.conf",
             "qemu.conf",
         }
@@ -81,12 +82,12 @@ class TestConfigPipeline:
 
         assert "dnsmasq.conf" in generated
 
-    def test_dnsmasq_not_generated_for_vmedia(self, vmedia_job_config, tmp_path):
+    def test_dnsmasq_generated_for_vmedia(self, vmedia_job_config, tmp_path):
         assert vmedia_job_config.boot_interface == "redfish-virtual-media"
         pipeline = ConfigPipeline()
         generated = pipeline.generate_all(vmedia_job_config, tmp_path)
 
-        assert "dnsmasq.conf" not in generated
+        assert "dnsmasq.conf" in generated
 
     def test_port_offset_applied(self, tmp_path):
         job = ResolvedJobConfig(
@@ -106,4 +107,4 @@ class TestConfigPipeline:
 
         sql = (tmp_path / "init.sql").read_text()
         for db in ["keystone", "glance", "nova", "neutron", "ironic", "placement"]:
-            assert f"CREATE DATABASE `{db}`" in sql
+            assert f"CREATE DATABASE IF NOT EXISTS `{db}`" in sql
