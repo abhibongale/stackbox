@@ -22,6 +22,7 @@ class ResolvedJobConfig(BaseModel):
 
     vm_specs: VMSpecs = VMSpecs()
     boot_interface: str = "redfish-virtual-media"
+    boot_mode: str = "uefi"  # "uefi" or "bios" — VM firmware / Ironic boot mode
     bmc_driver: str = "redfish"
     hardware_types: list[str] = ["redfish"]
 

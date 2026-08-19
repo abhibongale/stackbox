@@ -1,4 +1,41 @@
+
 # Release Notes
+
+### Fix: PXE/iPXE baremetal deploy jobs now work (e.g. ironic-tempest-bios-redfish-pxe)
+
+Previously only `ironic-tempest-uefi-redfish-vmedia` could successfully deploy.
+All PXE and iPXE jobs failed across a chain of independent bugs.
+
+**Changes**
+
+**DHCP**: Removed standalone `stackbox-dnsmasq` from PXE/iPXE jobs.
+Neutron's dnsmasq (neutron-dhcp-agent) is always present and injects
+the correct PXE boot options via Ironic port `extra_dhcp_opts`. The
+standalone container competed on the provisioning L2 and stripped those
+options when it won the race.
+
+**TFTP/HTTP image cache**: Merged `stackbox-ironic-httpboot` and
+`stackbox-ironic-tftpboot` into a single `stackbox-ironic-shared` volume
+at `/var/lib/ironic/`. Ironic hardlinks cached deploy images
+into per-node subdirectories; hardlinks cannot cross filesystems
+(errno EXDEV). Also set `tftp_master_path` explicitly so the cache
+lands on the shared volume rather than the container overlay.
+
+**Boot interface**: Nodes are now enrolled with the correct `--boot-interface`
+(e.g. `ipxe`) derived from `IRONIC_ENABLED_BOOT_INTERFACES` in the frozen job
+config. Previously hardcoded to `redfish-virtual-media`, causing nova VIF
+attach to fail immediately (`BadRequestException`).
+
+**Boot mode**: `IRONIC_BOOT_MODE` is now detected and applied to all three
+layers that require it: the libvirt VM firmware, the Ironic conductor
+`[deploy] default_boot_mode` (controls which PXE bootfile neutron
+announces — without this a BIOS VM receives `snponly.efi` and silently fails
+to PXE-boot), and the node `capabilities=boot_mode` property at enrollment.
+
+**Migration**: Run `stackbox clean --all` once to remove the old split
+volumes (`stackbox-ironic-httpboot`, `stackbox-ironic-tftpboot`) before
+the next `stackbox run`.
+
 
 ## 0.2.0 — Ironic Virtual Media Deploy Chain
 

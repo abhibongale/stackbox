@@ -1,6 +1,7 @@
 from configparser import ConfigParser
 
 from stackbox.config_gen.ironic import IronicConfigGenerator
+from stackbox.models.job_config import ResolvedJobConfig
 
 
 class TestIronicConfigGenerator:
@@ -38,6 +39,23 @@ class TestIronicConfigGenerator:
 
         assert "deploy" in config
         assert ":3928" in config["deploy"]["http_url"]
+
+    def test_default_boot_mode_uefi(self, vmedia_job_config, port_manager):
+        gen = IronicConfigGenerator(vmedia_job_config, port_manager)
+        config = ConfigParser()
+        config.read_string(gen.generate()["ironic.conf"])
+
+        assert config["deploy"]["default_boot_mode"] == "uefi"
+
+    def test_default_boot_mode_bios(self, port_manager):
+        # A bios job must make Ironic hand out the bios PXE bootfile instead of
+        # the uefi default (snponly.efi), which a legacy-BIOS VM cannot boot.
+        job = ResolvedJobConfig(job_name="bios-pxe", boot_mode="bios")
+        gen = IronicConfigGenerator(job, port_manager)
+        config = ConfigParser()
+        config.read_string(gen.generate()["ironic.conf"])
+
+        assert config["deploy"]["default_boot_mode"] == "bios"
 
     def test_api_port(self, vmedia_job_config, port_manager):
         gen = IronicConfigGenerator(vmedia_job_config, port_manager)

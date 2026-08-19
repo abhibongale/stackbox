@@ -24,5 +24,5 @@ class VirtualBMNode(BaseModel):
     disk_gb: int = 10
     mac_address: str | None = None
     bmc: BMCConfig = BMCConfig(type=BMCType.REDFISH)
-    firmware: str = "uefi"
-    boot_mode: str = "redfish-virtual-media"
+    firmware: str = "uefi"  # "uefi" or "bios" — controls the libvirt domain firmware
+    boot_interface: str = "redfish-virtual-media"  # Ironic boot interface for enrollment

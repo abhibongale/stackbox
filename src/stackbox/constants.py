@@ -94,7 +94,7 @@ KOLLA_SERVICE_COMMANDS = {
     "cinder-scheduler": "cinder-scheduler --config-file /etc/cinder/cinder.conf",
     "cinder-volume": "cinder-volume --config-file /etc/cinder/cinder.conf",
     "tgtd": "tgtd -f",
-    "ironic-pxe": "in.tftpd -L --address 0.0.0.0:69 -s /tftpboot",
+    "ironic-pxe": "in.tftpd -L --address 0.0.0.0:69 -s /var/lib/ironic/tftpboot",
     "dnsmasq": "dnsmasq -k --conf-file=/etc/dnsmasq.conf",
 }
 

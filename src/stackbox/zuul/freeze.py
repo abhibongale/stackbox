@@ -42,6 +42,12 @@ def detect_boot_interface(localrc: dict[str, str]) -> str:
     return raw.split(",")[0].strip()
 
 
+def detect_boot_mode(localrc: dict[str, str]) -> str:
+    """Resolve the VM firmware / Ironic boot mode (uefi or bios)."""
+    raw = localrc.get("IRONIC_BOOT_MODE", "uefi").strip().lower()
+    return "bios" if raw == "bios" else "uefi"
+
+
 def detect_hardware_types(localrc: dict[str, str]) -> list[str]:
     raw = localrc.get("IRONIC_ENABLED_HARDWARE_TYPES", "redfish")
     return [t.strip() for t in raw.split(",") if t.strip()]
@@ -68,6 +74,7 @@ def build_resolved_config(
         tempest_test_regex=tempest_regex,
         vm_specs=extract_vm_specs(localrc),
         boot_interface=detect_boot_interface(localrc),
+        boot_mode=detect_boot_mode(localrc),
         bmc_driver=detect_bmc_driver(localrc),
         hardware_types=detect_hardware_types(localrc),
     )

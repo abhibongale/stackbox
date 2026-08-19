@@ -20,7 +20,12 @@ SHARED_VOLUMES = {
     "stackbox-keystone-credential": "/etc/keystone/credential-keys/",
     "stackbox-libvirt-sock": "/var/run/libvirt/",
     "stackbox-libvirt-images": "/var/lib/libvirt/images/",
-    "stackbox-ironic-httpboot": "/var/lib/ironic/httpboot/",
+    # Single volume for all of Ironic's boot state (httpboot/, tftpboot/,
+    # master_images/). Ironic hardlinks cached deploy images from the master
+    # cache into the per-node httpboot/tftpboot dirs; hardlinks cannot cross
+    # filesystems, so these must all live on one volume (see tftp_master_path
+    # in the ironic config generator).
+    "stackbox-ironic-shared": "/var/lib/ironic/",
     "stackbox-glance-images": "/var/lib/glance/images/",
     "stackbox-ovs-run": "/var/run/openvswitch/",
 }
@@ -103,7 +108,12 @@ def required_containers(job: ResolvedJobConfig) -> set[str]:
         containers.update({"cinder-api", "cinder-scheduler", "cinder-volume", "tgtd"})
 
     if job.boot_interface in ("pxe", "ipxe"):
-        containers.add("dnsmasq")
+        # DHCP is served by Neutron's dnsmasq (neutron-dhcp-agent, always
+        # present) for both PXE and virtual-media boot. Ironic injects the PXE
+        # boot options (bootfile, tftp-server) onto the Neutron port via
+        # extra_dhcp_opts, so a standalone dnsmasq would only be a competing
+        # DHCP server on the provisioning L2. PXE still needs a TFTP server,
+        # which ironic-pxe provides.
         containers.add("ironic-pxe")
 
     return containers
@@ -187,7 +197,7 @@ def build_container_specs(
             volumes=[
                 _config_vol(configs_dir, "glance-api.conf", "/etc/glance/glance-api.conf"),
                 _config_vol(configs_dir, "glance-policy.yaml", "/etc/glance/policy.yaml"),
-                _shared_vol("stackbox-ironic-httpboot"),
+                _shared_vol("stackbox-ironic-shared"),
                 _shared_vol("stackbox-glance-images"),
                 _kolla_config_vol(configs_dir, "glance-api", KOLLA_SERVICE_COMMANDS["glance-api"], permissions=[
                     {"path": "/var/lib/glance", "owner": "glance:glance", "recurse": True},
@@ -331,7 +341,7 @@ def build_container_specs(
             image=_image_for("ironic-conductor", release, image_overrides),
             volumes=[
                 _config_vol(configs_dir, "ironic.conf", "/etc/ironic/ironic.conf"),
-                _shared_vol("stackbox-ironic-httpboot"),
+                _shared_vol("stackbox-ironic-shared"),
                 _kolla_config_vol(configs_dir, "ironic-conductor", KOLLA_SERVICE_COMMANDS["ironic-conductor"]),
             ],
         ))
@@ -340,10 +350,16 @@ def build_container_specs(
         specs.append(ContainerSpec(
             name=_name("ironic-http"),
             image=_image_for("ironic-conductor", release, image_overrides),
-            command=["python3", "-m", "http.server", str(http_port),
-                     "--directory", "/var/lib/ironic/httpboot"],
+            # The shared volume mounts at /var/lib/ironic, so the httpboot/ and
+            # tftpboot/ subdirs don't exist until created. Make them before
+            # serving, otherwise http.server 404s on / and the health check
+            # (expects 200) never passes.
+            command=["sh", "-c",
+                     "mkdir -p /var/lib/ironic/httpboot /var/lib/ironic/tftpboot && "
+                     f"exec python3 -m http.server {http_port} "
+                     "--directory /var/lib/ironic/httpboot"],
             volumes=[
-                _shared_vol("stackbox-ironic-httpboot"),
+                _shared_vol("stackbox-ironic-shared"),
             ],
             health_check=HealthCheck(
                 type="http",
@@ -410,7 +426,7 @@ def build_container_specs(
                 _vol(libvirt_run_dir, libvirt_run_dir, ""),
                 _vol(image_dir, image_dir, ""),
                 _vol(vmedia_dir, vmedia_dir, ""),
-                _shared_vol("stackbox-ironic-httpboot"),
+                _shared_vol("stackbox-ironic-shared"),
             ],
             environment={
                 "SUSHY_TOOLS_CONFIG": "/etc/sushy/emulator.conf",
@@ -491,19 +507,8 @@ def build_container_specs(
             name=_name("ironic-pxe"),
             image=_image_for("ironic-pxe", release, image_overrides),
             volumes=[
-                _shared_vol("stackbox-ironic-httpboot"),
+                _shared_vol("stackbox-ironic-shared"),
                 _kolla_config_vol(configs_dir, "ironic-pxe", KOLLA_SERVICE_COMMANDS["ironic-pxe"]),
-            ],
-        ))
-
-    if "dnsmasq" in needed:
-        specs.append(ContainerSpec(
-            name=_name("dnsmasq"),
-            image=_image_for("dnsmasq", release, image_overrides),
-            privileged=True,
-            volumes=[
-                _config_vol(configs_dir, "dnsmasq.conf", "/etc/dnsmasq.conf"),
-                _kolla_config_vol(configs_dir, "dnsmasq", KOLLA_SERVICE_COMMANDS["dnsmasq"]),
             ],
         ))
 

@@ -41,12 +41,25 @@ class TestRequiredContainers:
         assert "dnsmasq" not in needed
         assert "ironic-pxe" not in needed
 
-    def test_pxe_has_dnsmasq_and_dhcp_agent(self):
+    def test_pxe_uses_neutron_dhcp_not_standalone_dnsmasq(self):
+        # PXE provisioning DHCP is served by Neutron's dnsmasq (dhcp-agent),
+        # not a standalone dnsmasq. PXE still needs a TFTP server (ironic-pxe).
         job = ResolvedJobConfig(job_name="pxe-test", boot_interface="pxe")
         needed = required_containers(job)
-        assert "dnsmasq" in needed
+        assert "dnsmasq" not in needed
         assert "neutron-dhcp-agent" in needed
         assert "ironic-pxe" in needed
+
+    def test_pxe_ironic_containers_share_tftpboot(self, tmp_path):
+        # conductor and pxe must share one Ironic state volume so the deploy
+        # image cache and its hardlink targets live on the same filesystem.
+        job = ResolvedJobConfig(job_name="pxe-test", boot_interface="pxe")
+        pm = PortManager()
+        specs = build_container_specs(job, tmp_path, pm, "2025.1-ubuntu-noble")
+        for name in ("stackbox-ironic-conductor", "stackbox-ironic-pxe"):
+            spec = next(s for s in specs if s.name == name)
+            sources = [v.source for v in spec.volumes]
+            assert "stackbox-ironic-shared" in sources, f"{name} missing shared volume"
 
     def test_ipmi_has_vbmc(self):
         job = ResolvedJobConfig(job_name="ipmi-test", bmc_driver="ipmi")

@@ -106,7 +106,13 @@ class LibvirtManager:
                     return part
         return None
 
-    def create_nodes(self, vm_specs: VMSpecs, prefix: str = "stackbox-node") -> list[VirtualBMNode]:
+    def create_nodes(
+        self,
+        vm_specs: VMSpecs,
+        prefix: str = "stackbox-node",
+        boot_interface: str = "redfish-virtual-media",
+        firmware: str = "uefi",
+    ) -> list[VirtualBMNode]:
         self.ensure_running()
         nodes = []
         for i in range(vm_specs.count):
@@ -121,6 +127,8 @@ class LibvirtManager:
                 vcpus=vm_specs.cpu,
                 disk_gb=vm_specs.disk_gb,
                 mac_address=mac,
+                boot_interface=boot_interface,
+                firmware=firmware,
             )
 
             disk_path = str(self.image_dir / f"{name}.qcow2")

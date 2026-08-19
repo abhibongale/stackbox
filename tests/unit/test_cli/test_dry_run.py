@@ -71,7 +71,7 @@ class TestPrintDryRun:
     def test_shows_shared_volumes(self, vmedia_config):
         output = _capture_output(vmedia_config)
         assert "stackbox-libvirt-sock" in output
-        assert "stackbox-ironic-httpboot" in output
+        assert "stackbox-ironic-shared" in output
 
     def test_shows_bootstrap_phases(self, vmedia_config):
         output = _capture_output(vmedia_config)

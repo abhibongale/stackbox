@@ -28,7 +28,7 @@ START_ORDER = [
     ["swift-proxy-server"],
     ["cinder-api", "cinder-scheduler", "cinder-volume", "tgtd"],
     ["sushy-tools", "vbmc"],
-    ["dnsmasq", "ironic-pxe"],
+    ["ironic-pxe"],
     ["ironic-api", "ironic-conductor", "ironic-http"],
     ["nova-compute"],
 ]

@@ -188,7 +188,11 @@ class BootstrapOrchestrator:
     def _setup_baremetal(self) -> None:
         LibvirtManager.ensure_running()
         libvirt = LibvirtManager(backend=self.backend)
-        nodes = libvirt.create_nodes(self.job.vm_specs)
+        nodes = libvirt.create_nodes(
+            self.job.vm_specs,
+            boot_interface=self.job.boot_interface,
+            firmware=self.job.boot_mode,
+        )
         for node in nodes:
             self.manifest.record_domain(node.name)
 

@@ -9,6 +9,7 @@ from stackbox.zuul.freeze import (
     coerce_localrc,
     detect_bmc_driver,
     detect_boot_interface,
+    detect_boot_mode,
     detect_hardware_types,
     extract_vm_specs,
 )
@@ -71,6 +72,15 @@ class TestHelpers:
 
     def test_detect_boot_interface_default(self):
         assert detect_boot_interface({}) == "redfish-virtual-media"
+
+    def test_detect_boot_mode_bios(self):
+        assert detect_boot_mode({"IRONIC_BOOT_MODE": "bios"}) == "bios"
+
+    def test_detect_boot_mode_uefi(self):
+        assert detect_boot_mode({"IRONIC_BOOT_MODE": "uefi"}) == "uefi"
+
+    def test_detect_boot_mode_default(self):
+        assert detect_boot_mode({}) == "uefi"
 
     def test_detect_hardware_types_single(self):
         assert detect_hardware_types({"IRONIC_ENABLED_HARDWARE_TYPES": "redfish"}) == ["redfish"]

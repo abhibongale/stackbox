@@ -42,6 +42,10 @@ class IronicConfigGenerator(ServiceConfigGenerator):
         config["deploy"] = {
             "http_url": f"http://{provisioning_ip}:{self.ports.get('ironic-http')}",
             "http_root": "/var/lib/ironic/httpboot",
+            # Drives which PXE bootfile Ironic hands out over DHCP. Without this
+            # Ironic defaults to uefi and serves snponly.efi, which a legacy-BIOS
+            # VM cannot execute — the PXE chain dies before iPXE loads.
+            "default_boot_mode": self.job.boot_mode,
         }
 
         config["service_catalog"] = {
@@ -84,6 +88,12 @@ class IronicConfigGenerator(ServiceConfigGenerator):
         config["pxe"] = {
             "tftp_server": provisioning_ip,
             "tftp_root": "/var/lib/ironic/tftpboot",
+            # Override the upstream default of /tftpboot/master_images (which
+            # lands on the container overlay fs). Ironic hardlinks cached deploy
+            # images from this master cache into the per-node httpboot/tftpboot
+            # dirs; keeping it under /var/lib/ironic (the shared volume) puts the
+            # cache and its link targets on one filesystem so hardlinks succeed.
+            "tftp_master_path": "/var/lib/ironic/tftpboot/master_images",
             "images_path": "/var/lib/ironic/httpboot/images",
             "instance_master_path": "/var/lib/ironic/httpboot/master_images",
         }

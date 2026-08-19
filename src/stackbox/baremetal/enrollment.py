@@ -114,10 +114,12 @@ def _update_existing_node(
 ) -> None:
     set_cmd = env + [
         "openstack", "baremetal", "node", "set", node.name,
+        "--boot-interface", node.boot_interface,
         "--property", f"memory_mb={node.ram_mb}",
         "--property", f"cpus={node.vcpus}",
         "--property", f"local_gb={node.disk_gb}",
         "--property", "cpu_arch=x86_64",
+        "--property", f"capabilities=boot_mode:{node.firmware}",
     ]
     for arg in _build_driver_info_args(node, bmc_port, deploy_images):
         set_cmd.append(arg)
@@ -222,6 +224,13 @@ def enroll_nodes(
 
     _wait_for_ironic(backend, env)
 
+    if nodes:
+        sample = nodes[0]
+        log.info(
+            "Enrolling %d node(s): boot_interface=%s firmware=%s driver=%s",
+            len(nodes), sample.boot_interface, sample.firmware, sample.bmc.type.value,
+        )
+
     for node in nodes:
         exit_code, output = backend.exec(
             CONTAINER,
@@ -238,13 +247,14 @@ def enroll_nodes(
         create_cmd = env + [
             "openstack", "baremetal", "node", "create",
             "--driver", node.bmc.type.value,
-            "--boot-interface", node.boot_mode,
+            "--boot-interface", node.boot_interface,
             "--name", node.name,
             "--resource-class", "baremetal",
             "--property", f"memory_mb={node.ram_mb}",
             "--property", f"cpus={node.vcpus}",
             "--property", f"local_gb={node.disk_gb}",
             "--property", "cpu_arch=x86_64",
+            "--property", f"capabilities=boot_mode:{node.firmware}",
             "-f", "value", "-c", "uuid",
         ] + driver_info_args
 
