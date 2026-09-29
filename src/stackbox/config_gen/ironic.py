@@ -12,22 +12,27 @@ class IronicConfigGenerator(ServiceConfigGenerator):
         lr = self.job.devstack_localrc
         provisioning_ip = NetworkConfig().provisioning_subnet.gateway
 
-        boot_ifaces = lr.get(
-            "IRONIC_ENABLED_BOOT_INTERFACES", "redfish-virtual-media")
-        default_boot = lr.get(
-            "IRONIC_DEFAULT_BOOT_INTERFACE", boot_ifaces.split(",")[0].strip())
+        # These enabled_*_interfaces keys are often omitted by IPMI jobs, which
+        # rely on devstack deriving them from IRONIC_DEPLOY_DRIVER. Fall back to
+        # the resolved job values (which already honor the deploy driver) instead
+        # of hardcoding redfish, otherwise an IPMI job gets a redfish config it
+        # cannot talk to its (vbmc/IPMI-only) nodes with.
+        boot_ifaces = lr.get("IRONIC_ENABLED_BOOT_INTERFACES") or self.job.boot_interface
+        hardware_types = lr.get("IRONIC_ENABLED_HARDWARE_TYPES") or ",".join(
+            self.job.hardware_types)
+        # ipmi hardware type uses the ipmitool management/power interfaces;
+        # redfish uses redfish. Honor an explicit localrc value when present.
+        bmc_iface = "ipmitool" if self.job.bmc_driver == "ipmi" else "redfish"
 
         config["DEFAULT"].update({
-            "enabled_hardware_types": lr.get(
-                "IRONIC_ENABLED_HARDWARE_TYPES", "redfish"),
+            "enabled_hardware_types": hardware_types,
             "enabled_boot_interfaces": boot_ifaces,
-            "default_boot_interface": default_boot,
             "enabled_deploy_interfaces": lr.get(
                 "IRONIC_ENABLED_DEPLOY_INTERFACES", "direct"),
             "enabled_management_interfaces": lr.get(
-                "IRONIC_ENABLED_MANAGEMENT_INTERFACES", "redfish"),
+                "IRONIC_ENABLED_MANAGEMENT_INTERFACES", bmc_iface),
             "enabled_power_interfaces": lr.get(
-                "IRONIC_ENABLED_POWER_INTERFACES", "redfish"),
+                "IRONIC_ENABLED_POWER_INTERFACES", bmc_iface),
             "auth_strategy": "keystone",
             "my_ip": provisioning_ip,
             "esp_image": "/opt/stackbox/efiboot.img",
@@ -46,6 +51,24 @@ class IronicConfigGenerator(ServiceConfigGenerator):
             # Ironic defaults to uefi and serves snponly.efi, which a legacy-BIOS
             # VM cannot execute — the PXE chain dies before iPXE loads.
             "default_boot_mode": self.job.boot_mode,
+        }
+
+        # Ironic ships with oslo.policy >= 6.0, which removed the [oslo_policy]
+        # enforce_scope option (scope is now *always* enforced from each rule's
+        # scope_types) and defaults enforce_new_defaults to True. The previous
+        # workaround set both to false and backfired:
+        #   * enforce_scope=false is an unknown option and silently ignored, so
+        #     scope is still enforced.
+        #   * enforce_new_defaults=false forces allocation creation down the
+        #     legacy baremetal:allocation:create_pre_rbac check, whose
+        #     scope_types is ['project'] only. tempest's admin token is
+        #     system-scoped, so that check raised InvalidScope -> 500 ServerFault
+        #     on POST /v1/allocations.
+        # Keeping the modern new-defaults behavior skips the create_pre_rbac
+        # branch entirely; baremetal:allocation:create allows scope_types
+        # ['system', 'project'], so the system-scoped tempest admin succeeds.
+        config["oslo_policy"] = {
+            "enforce_new_defaults": "true",
         }
 
         config["service_catalog"] = {
@@ -120,5 +143,69 @@ class IronicConfigGenerator(ServiceConfigGenerator):
                 if section not in config:
                     config[section] = {}
                 config[section].update(opts)
+
+        # fake-hardware must always be enabled so ironic-tempest-plugin API
+        # tests can create nodes and exercise all fake interface types.
+        # (tempest.conf baremetal.driver is hardcoded to fake-hardware,
+        # mirroring what devstack does for API tests.)
+        # Applied after the translator so these are never overwritten by localrc.
+        def _add_if_missing(csv: str, entry: str) -> str:
+            parts = [p.strip() for p in csv.split(",")]
+            return csv if entry in parts else f"{csv},{entry}"
+
+        def _prepend_if_missing(csv: str, entry: str) -> str:
+            parts = [p.strip() for p in csv.split(",")]
+            return csv if entry in parts else f"{entry},{csv}"
+
+        config["DEFAULT"]["enabled_hardware_types"] = _add_if_missing(
+            config["DEFAULT"]["enabled_hardware_types"], "fake-hardware")
+
+        # Prepend fake for boot and deploy so fake-hardware nodes pick the fake
+        # variant as their default (real hardware skips fake since it's not in
+        # their supported-interfaces list). Append for management/power where
+        # interfaces are hardware-specific and order doesn't affect defaults.
+        for iface in ("boot", "deploy"):
+            key = f"enabled_{iface}_interfaces"
+            config["DEFAULT"][key] = _prepend_if_missing(
+                config["DEFAULT"][key], "fake")
+        for iface in ("management", "power"):
+            key = f"enabled_{iface}_interfaces"
+            config["DEFAULT"][key] = _add_if_missing(
+                config["DEFAULT"][key], "fake")
+
+        # Optional interfaces not set by localrc: use the no-op default so
+        # real drivers still work, plus fake so fake-hardware nodes can set them.
+        # fake deploy also prevents automated cleaning from booting a real ramdisk
+        # on fake-hardware nodes (which would leave them in "clean failed").
+        for iface, no_op in [
+            ("bios", "no-bios"),
+            ("console", "no-console"),
+            ("inspect", "no-inspect"),
+            ("raid", "no-raid"),
+            ("rescue", "no-rescue"),
+            ("vendor", "no-vendor"),
+        ]:
+            key = f"enabled_{iface}_interfaces"
+            current = config["DEFAULT"].get(key, no_op)
+            config["DEFAULT"][key] = _add_if_missing(current, "fake")
+
+        # The autodetect deploy interface refuses to load unless every entry in
+        # autodetect_deploy_interfaces is also enabled. Ironic's default for that
+        # option includes 'ramdisk', which these jobs don't enable, so the
+        # conductor dies with DriverLoadError. Mirror devstack: honor the job's
+        # IRONIC_AUTODETECT_DEPLOY_INTERFACES when set; otherwise constrain the
+        # list to the concrete deploy interfaces the job actually enabled.
+        enabled_deploy = [
+            p.strip()
+            for p in config["DEFAULT"]["enabled_deploy_interfaces"].split(",")
+            if p.strip()
+        ]
+        if "autodetect" in enabled_deploy:
+            autodetect_list = lr.get("IRONIC_AUTODETECT_DEPLOY_INTERFACES", "").strip()
+            if not autodetect_list:
+                autodetect_list = ",".join(
+                    i for i in enabled_deploy if i not in ("autodetect", "fake")
+                )
+            config["DEFAULT"]["autodetect_deploy_interfaces"] = autodetect_list
 
         return {"ironic.conf": self._render(config)}

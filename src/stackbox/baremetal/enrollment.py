@@ -5,12 +5,58 @@ import time
 
 from stackbox.config_gen.ports import PortManager
 from stackbox.containers.backend import ContainerBackend
+from stackbox.containers.health import assert_containers_alive
 from stackbox.exceptions import BootstrapError
 from stackbox.models.baremetal import VirtualBMNode
 
 log = logging.getLogger(__name__)
 
 CONTAINER = "stackbox-ironic-api"
+
+# Reaching "available" runs the node through cleaning: PXE-boot the IPA ramdisk,
+# wipe the disk, and heartbeat back. On a VM that legitimately takes several
+# minutes, so the cleaning wait needs a much longer budget than a plain state
+# transition like "manageable".
+CLEAN_TIMEOUT = 600
+
+# Provision states from which a node never recovers on its own. Once a node
+# lands here, the enrollment waits should abort with the node's last_error
+# instead of polling until the timeout expires.
+_TERMINAL_STATES = (
+    "clean failed",
+    "deploy failed",
+    "error",
+    "inspect failed",
+    "rescue failed",
+    "unrescue failed",
+    "adopt failed",
+    "service failed",
+)
+
+# Containers whose death silently wedges enrollment/cleaning: without the
+# conductor nothing changes node state, and without the OVS dataplane or the
+# DHCP agent the cleaning ramdisk can never PXE boot or heartbeat. The
+# orchestrator filters this list down to the containers it actually deployed.
+CRITICAL_CONTAINERS = (
+    "stackbox-ironic-conductor",
+    "stackbox-ironic-api",
+    "stackbox-openvswitch-vswitchd",
+    "stackbox-openvswitch-db-server",
+    "stackbox-neutron-openvswitch-agent",
+    "stackbox-neutron-dhcp-agent",
+    "stackbox-neutron-server",
+)
+
+
+def _node_last_error(backend: ContainerBackend, env: list[str], node_name: str) -> str:
+    ec, out = backend.exec(
+        CONTAINER,
+        env + ["openstack", "baremetal", "node", "show", node_name,
+               "-f", "value", "-c", "last_error"],
+    )
+    if ec == 0 and out.strip():
+        return out.strip()
+    return "(no last_error reported)"
 
 
 def _os_env(admin_pass: str, port: int) -> list[str]:
@@ -38,10 +84,13 @@ def _wait_for_state(
     node_name: str,
     target_state: str,
     timeout: int = 120,
+    critical_containers: list[str] | None = None,
 ) -> None:
     deadline = time.monotonic() + timeout
     last_state = None
     while time.monotonic() < deadline:
+        if critical_containers:
+            assert_containers_alive(backend, critical_containers)
         exit_code, output = backend.exec(
             CONTAINER,
             env + ["openstack", "baremetal", "node", "show", node_name, "-f", "value", "-c", "provision_state"],
@@ -50,6 +99,12 @@ def _wait_for_state(
             current = output.strip().lower()
             if current == target_state:
                 return
+            if current in _TERMINAL_STATES:
+                last_error = _node_last_error(backend, env, node_name)
+                raise BootstrapError(
+                    f"Node {node_name} entered terminal state '{current}' while "
+                    f"waiting for {target_state}: {last_error}"
+                )
             if current != last_state:
                 log.info("Node %s: %s (waiting for %s)", node_name, current, target_state)
                 last_state = current
@@ -60,10 +115,17 @@ def _wait_for_state(
     )
 
 
-def _wait_for_ironic(backend: ContainerBackend, env: list[str], timeout: int = 120) -> None:
+def _wait_for_ironic(
+    backend: ContainerBackend,
+    env: list[str],
+    timeout: int = 120,
+    critical_containers: list[str] | None = None,
+) -> None:
     log.info("Waiting for Ironic API and conductor to be ready...")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if critical_containers:
+            assert_containers_alive(backend, critical_containers)
         exit_code, output = backend.exec(
             CONTAINER,
             env + ["openstack", "baremetal", "driver", "list", "-f", "value", "-c", "Name"],
@@ -175,10 +237,13 @@ def _wait_for_power_sync(
     env: list[str],
     node_names: list[str],
     timeout: int = 180,
+    critical_containers: list[str] | None = None,
 ) -> None:
     deadline = time.monotonic() + timeout
     pending = set(node_names)
     while pending and time.monotonic() < deadline:
+        if critical_containers:
+            assert_containers_alive(backend, critical_containers)
         for name in list(pending):
             ec, out = backend.exec(
                 CONTAINER,
@@ -217,12 +282,13 @@ def enroll_nodes(
     port_manager: PortManager,
     admin_pass: str,
     deploy_images: dict[str, str] | None = None,
+    critical_containers: list[str] | None = None,
 ) -> None:
     ks_port = port_manager.get("keystone")
     bmc_port = port_manager.get("sushy-tools")
     env = _os_env(admin_pass, ks_port)
 
-    _wait_for_ironic(backend, env)
+    _wait_for_ironic(backend, env, critical_containers=critical_containers)
 
     if nodes:
         sample = nodes[0]
@@ -271,15 +337,25 @@ def enroll_nodes(
             "openstack", "baremetal", "node", "manage", node.name,
         ], f"manage {node.name}")
 
-        _wait_for_state(backend, env, node.name, "manageable")
+        _wait_for_state(
+            backend, env, node.name, "manageable",
+            critical_containers=critical_containers,
+        )
 
         _exec_or_fail(backend, env + [
             "openstack", "baremetal", "node", "provide", node.name,
         ], f"provide {node.name}")
 
-        _wait_for_state(backend, env, node.name, "available")
+        _wait_for_state(
+            backend, env, node.name, "available",
+            timeout=CLEAN_TIMEOUT,
+            critical_containers=critical_containers,
+        )
 
         log.info("Enrolled node %s (driver=%s, mac=%s)", node.name, node.bmc.type.value, node.mac_address)
 
-    _wait_for_power_sync(backend, env, [n.name for n in nodes])
+    _wait_for_power_sync(
+        backend, env, [n.name for n in nodes],
+        critical_containers=critical_containers,
+    )
     log.info("All %d nodes enrolled and available", len(nodes))

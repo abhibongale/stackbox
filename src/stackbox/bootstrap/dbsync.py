@@ -36,12 +36,28 @@ def _run_dbsync(backend: ContainerBackend, container: str, commands: list[list[s
 
 
 def run_dbsync(backend: ContainerBackend, job: ResolvedJobConfig) -> None:
+    from stackbox.containers.specs import required_containers
+
     tasks = dict(DBSYNC_COMMANDS)
 
     tasks["nova"] = ("stackbox-nova-api", NOVA_DBSYNC_COMMANDS)
 
     if job.devstack_services.get("c-api", False):
         tasks["cinder"] = ("stackbox-cinder-api", [["cinder-manage", "db", "sync"]])
+
+    # Only sync databases for services the job actually deploys. Jobs that
+    # disable nova/glance/placement (e.g. functional/API-only jobs) have no
+    # container to exec the db_sync into.
+    needed = required_containers(job)
+    tasks = {
+        service: (container, commands)
+        for service, (container, commands) in tasks.items()
+        if container.removeprefix("stackbox-") in needed
+    }
+
+    if not tasks:
+        log.info("No databases to sync")
+        return
 
     errors = []
 

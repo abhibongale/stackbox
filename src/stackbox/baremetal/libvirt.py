@@ -10,7 +10,7 @@ from pathlib import Path
 from stackbox.baremetal.vm_template import render_domain_xml
 from stackbox.containers.backend import ContainerBackend
 from stackbox.exceptions import BootstrapError
-from stackbox.models.baremetal import VirtualBMNode
+from stackbox.models.baremetal import BMCConfig, BMCType, VirtualBMNode
 from stackbox.models.job_config import VMSpecs
 
 log = logging.getLogger(__name__)
@@ -18,6 +18,15 @@ log = logging.getLogger(__name__)
 SYSTEM_IMAGE_DIR = "/var/lib/libvirt/images"
 SESSION_IMAGE_DIR = str(Path.home() / ".local/share/stackbox/libvirt/images")
 VMEDIA_DIR = str(Path.home() / ".local/share/stackbox/vmedia")
+
+# The baremetal VMs are defined by the host `virsh` in the per-user *session*
+# libvirt (qemu:///session). Both BMC emulators (sushy-tools for redfish, vbmc
+# for ipmi) run in containers and must connect back to that same libvirt, or
+# they won't find the stackbox-node-* domains. Mount LIBVIRT_RUN_DIR into the
+# container and hand the emulator SESSION_LIBVIRT_URI.
+LIBVIRT_RUN_DIR = f"/run/user/{os.getuid()}/libvirt"
+LIBVIRT_SESSION_SOCK = f"{LIBVIRT_RUN_DIR}/virtqemud-sock"
+SESSION_LIBVIRT_URI = f"qemu+unix:///session?socket={LIBVIRT_SESSION_SOCK}"
 
 
 def default_image_dir() -> str:
@@ -112,6 +121,7 @@ class LibvirtManager:
         prefix: str = "stackbox-node",
         boot_interface: str = "redfish-virtual-media",
         firmware: str = "uefi",
+        bmc_type: BMCType = BMCType.REDFISH,
     ) -> list[VirtualBMNode]:
         self.ensure_running()
         nodes = []
@@ -129,6 +139,11 @@ class LibvirtManager:
                 mac_address=mac,
                 boot_interface=boot_interface,
                 firmware=firmware,
+                # The node's BMC type drives both the ironic `--driver` and the
+                # driver_info shape at enrollment. Without this it defaults to
+                # redfish, so an IPMI job would register a redfish node its
+                # conductor can't load ("No conductor ... supports driver redfish").
+                bmc=BMCConfig(type=bmc_type),
             )
 
             disk_path = str(self.image_dir / f"{name}.qcow2")

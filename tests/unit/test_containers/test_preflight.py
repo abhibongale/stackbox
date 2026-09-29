@@ -6,6 +6,7 @@ from stackbox.config_gen.ports import PortManager
 from stackbox.exceptions import PortConflictError, PreflightError
 from stackbox.containers.preflight import (
     check_docker,
+    check_host_ovs,
     check_kvm,
     check_libvirt,
     check_ports,
@@ -66,3 +67,28 @@ class TestCheckPorts:
         pm = PortManager()
         with patch("subprocess.run", side_effect=FileNotFoundError):
             check_ports(pm)
+
+
+class TestCheckHostOvs:
+    def test_passes_when_no_host_ovs(self):
+        result = MagicMock(stdout="inactive\ninactive\n")
+        with patch("subprocess.run", return_value=result):
+            check_host_ovs()
+
+    def test_raises_when_host_ovs_active(self):
+        # A host ovs-vswitchd fights stackbox's containerized OVS over the kernel
+        # datapath and silently wedges provisioning DHCP.
+        result = MagicMock(stdout="active\nactive\n")
+        with patch("subprocess.run", return_value=result):
+            with pytest.raises(PreflightError, match="Open vSwitch"):
+                check_host_ovs()
+
+    def test_raises_when_only_one_unit_active(self):
+        result = MagicMock(stdout="inactive\nactive\n")
+        with patch("subprocess.run", return_value=result):
+            with pytest.raises(PreflightError, match="clean wait"):
+                check_host_ovs()
+
+    def test_skips_when_systemctl_unavailable(self):
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            check_host_ovs()

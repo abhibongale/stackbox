@@ -92,3 +92,47 @@ class TestZuulClient:
         with patch.object(client.session, "get", return_value=mock_resp):
             all_jobs = client.list_jobs("openstack/ironic")
             assert len(all_jobs) == 2
+
+    def test_list_jobs_filters_branch(self, client):
+        project_data = {
+            "configs": [
+                {
+                    "source_context": {"branch": "master"},
+                    "pipelines": [
+                        {"name": "gate", "jobs": [[{"name": "master-job", "voting": True}]]},
+                    ],
+                },
+                {
+                    "source_context": {"branch": "stable/2025.2"},
+                    "pipelines": [
+                        {"name": "gate", "jobs": [[{"name": "stable-job", "voting": True}]]},
+                    ],
+                },
+            ],
+        }
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = project_data
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.object(client.session, "get", return_value=mock_resp):
+            master_jobs = client.list_jobs("openstack/ironic", branch="master")
+            assert len(master_jobs) == 1
+            assert master_jobs[0]["name"] == "master-job"
+            assert master_jobs[0]["branch"] == "master"
+
+    def test_list_jobs_includes_branch_field(self, client):
+        project_data = {
+            "configs": [{
+                "source_context": {"branch": "master"},
+                "pipelines": [
+                    {"name": "gate", "jobs": [[{"name": "j1", "voting": True}]]},
+                ],
+            }],
+        }
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = project_data
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.object(client.session, "get", return_value=mock_resp):
+            jobs = client.list_jobs("openstack/ironic")
+            assert jobs[0]["branch"] == "master"

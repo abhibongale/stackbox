@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import os
-
-from stackbox.baremetal.libvirt import VMEDIA_DIR
+from stackbox.baremetal.libvirt import SESSION_LIBVIRT_URI, VMEDIA_DIR
 from stackbox.config_gen.base import ServiceConfigGenerator
-
-LIBVIRT_SOCK_PATH = f"/run/user/{os.getuid()}/libvirt/virtqemud-sock"
 
 
 class SushyConfigGenerator(ServiceConfigGenerator):
@@ -15,7 +11,7 @@ class SushyConfigGenerator(ServiceConfigGenerator):
         feature_set = lr.get("IRONIC_REDFISH_EMULATOR_FEATURE_SET", "vmedia")
         port = self.ports.get("sushy-tools")
 
-        libvirt_uri = f"qemu+unix:///session?socket={LIBVIRT_SOCK_PATH}"
+        libvirt_uri = SESSION_LIBVIRT_URI
 
         content = f"""\
 SUSHY_EMULATOR_LISTEN_IP = u''

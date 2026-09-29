@@ -6,7 +6,7 @@ import shlex
 from pathlib import Path
 
 from stackbox.config_gen.ports import PortManager
-from stackbox.baremetal.libvirt import VMEDIA_DIR, default_image_dir
+from stackbox.baremetal.libvirt import LIBVIRT_RUN_DIR, VMEDIA_DIR, default_image_dir
 from stackbox.constants import (
     CONTAINER_PREFIX, KOLLA_IMAGES, KOLLA_REGISTRY, KOLLA_RELEASE_OVERRIDES,
     KOLLA_SERVICE_COMMANDS, METAL3_REGISTRY,
@@ -82,6 +82,33 @@ def _kolla_config_vol(
     )
 
 
+# Maps a stackbox container to the devstack_services toggle that governs it.
+# A container is dropped only when its toggle is *explicitly* False in the
+# job's devstack_services; an absent toggle means "use the devstack default",
+# which for these services is enabled — so we keep the container. This matches
+# how jobs like ironic-tempest-uefi-redfish-vmedia enable everything explicitly,
+# while ironic-tempest-functional-python3 explicitly disables nova/glance/
+# placement (n-*, g-api, placement-api) to run API-only tests.
+_SERVICE_TOGGLES = {
+    "keystone": "key",
+    "glance-api": "g-api",
+    "placement-api": "placement-api",
+    "nova-api": "n-api",
+    "nova-scheduler": "n-sch",
+    "nova-conductor": "n-cond",
+    "nova-compute": "n-cpu",
+    "neutron-server": "q-svc",
+    "neutron-dhcp-agent": "q-dhcp",
+    "neutron-openvswitch-agent": "q-agt",
+    "neutron-l3-agent": "q-l3",
+}
+
+
+def _service_enabled(job: ResolvedJobConfig, toggle: str) -> bool:
+    """True unless the devstack_services toggle is explicitly set to False."""
+    return job.devstack_services.get(toggle, True)
+
+
 def required_containers(job: ResolvedJobConfig) -> set[str]:
     containers = {
         "mariadb", "rabbitmq", "memcached",
@@ -95,10 +122,22 @@ def required_containers(job: ResolvedJobConfig) -> set[str]:
         "nova-libvirt",
     }
 
-    if job.bmc_driver == "redfish":
-        containers.add("sushy-tools")
-    elif job.bmc_driver == "ipmi":
-        containers.add("vbmc")
+    # Drop services the job explicitly disables (e.g. functional/API-only jobs).
+    for container, toggle in _SERVICE_TOGGLES.items():
+        if not _service_enabled(job, toggle):
+            containers.discard(container)
+
+    # libvirt only exists to back nova-compute; drop it when compute is gone.
+    if "nova-compute" not in containers:
+        containers.discard("nova-libvirt")
+
+    # A BMC is only useful when nova-compute drives real baremetal VMs. API-only
+    # jobs with compute disabled don't provision nodes, so skip the BMC.
+    if "nova-compute" in containers:
+        if job.bmc_driver == "redfish":
+            containers.add("sushy-tools")
+        elif job.bmc_driver == "ipmi":
+            containers.add("vbmc")
 
     # swift-proxy-server requires a full swift stack (account, container,
     # object servers + ring files) — not yet implemented; glance uses the
@@ -373,6 +412,7 @@ def build_container_specs(
             name=_name("openvswitch-db-server"),
             image=_image_for("openvswitch-db-server", release, image_overrides),
             privileged=True,
+            restart_policy="on-failure:5",
             volumes=[
                 _shared_vol("stackbox-ovs-run"),
                 _kolla_config_vol(configs_dir, "openvswitch-db-server", KOLLA_SERVICE_COMMANDS["openvswitch-db-server"]),
@@ -387,6 +427,11 @@ def build_container_specs(
             name=_name("openvswitch-vswitchd"),
             image=_image_for("openvswitch-vswitchd", release, image_overrides),
             privileged=True,
+            # vswitchd is the dataplane; if it dies (it has segfaulted under rapid
+            # bridge reconfiguration) the whole network silently wedges. Let Docker
+            # bring it back. The OVSDB (db-server) keeps the bridge definitions, so
+            # vswitchd reattaches and the neutron agent resyncs flows on restart.
+            restart_policy="on-failure:5",
             volumes=[
                 _shared_vol("stackbox-ovs-run"),
                 _vol("/lib/modules", "/lib/modules", "ro"),
@@ -442,10 +487,18 @@ def build_container_specs(
         vbmc_image = (image_overrides or {}).get(
             "vbmc", f"{METAL3_REGISTRY}/vbmc:latest",
         )
+        libvirt_run_dir = LIBVIRT_RUN_DIR
         specs.append(ContainerSpec(
             name=_name("vbmc"),
             image=vbmc_image,
-            volumes=[_shared_vol("stackbox-libvirt-sock")],
+            # vbmc manages the baremetal VMs over the host session libvirt (same
+            # as sushy-tools), so mount that run dir and run as the host user who
+            # owns the session socket. The stackbox-libvirt-sock shared volume is
+            # nova-libvirt's socket and does not contain the stackbox-node-* domains.
+            user=f"{os.getuid()}:{os.getgid()}",
+            volumes=[_vol(libvirt_run_dir, libvirt_run_dir, "")],
+            environment={"HOME": "/tmp"},
+            security_opts=["label=disable"],
         ))
 
     if "swift-proxy-server" in needed:

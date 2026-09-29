@@ -66,12 +66,37 @@ class TestHelpers:
     def test_detect_bmc_driver_default(self):
         assert detect_bmc_driver({}) == "redfish"
 
+    def test_detect_bmc_driver_falls_back_to_deploy_driver(self):
+        # IPMI jobs often omit IRONIC_ENABLED_HARDWARE_TYPES and only set
+        # IRONIC_DEPLOY_DRIVER; detection must not default such jobs to redfish.
+        assert detect_bmc_driver({"IRONIC_DEPLOY_DRIVER": "ipmi"}) == "ipmi"
+        assert detect_bmc_driver({"IRONIC_DEPLOY_DRIVER": "redfish"}) == "redfish"
+
+    def test_detect_bmc_driver_prefers_hardware_types_over_deploy_driver(self):
+        localrc = {"IRONIC_ENABLED_HARDWARE_TYPES": "ipmi", "IRONIC_DEPLOY_DRIVER": "redfish"}
+        assert detect_bmc_driver(localrc) == "ipmi"
+
     def test_detect_boot_interface(self):
         localrc = {"IRONIC_ENABLED_BOOT_INTERFACES": "redfish-virtual-media,pxe"}
         assert detect_boot_interface(localrc) == "redfish-virtual-media"
 
     def test_detect_boot_interface_default(self):
         assert detect_boot_interface({}) == "redfish-virtual-media"
+
+    def test_detect_boot_interface_ipmi_defaults_to_ipxe(self):
+        # No explicit boot interface + ipmi driver -> network boot (iPXE default).
+        assert detect_boot_interface({"IRONIC_DEPLOY_DRIVER": "ipmi"}) == "ipxe"
+
+    def test_detect_boot_interface_ipmi_pxe_when_ipxe_disabled(self):
+        localrc = {"IRONIC_DEPLOY_DRIVER": "ipmi", "IRONIC_IPXE_ENABLED": "False"}
+        assert detect_boot_interface(localrc) == "pxe"
+
+    def test_detect_boot_interface_explicit_wins(self):
+        localrc = {"IRONIC_DEPLOY_DRIVER": "ipmi", "IRONIC_ENABLED_BOOT_INTERFACES": "pxe"}
+        assert detect_boot_interface(localrc) == "pxe"
+
+    def test_detect_hardware_types_falls_back_to_deploy_driver(self):
+        assert detect_hardware_types({"IRONIC_DEPLOY_DRIVER": "ipmi"}) == ["ipmi"]
 
     def test_detect_boot_mode_bios(self):
         assert detect_boot_mode({"IRONIC_BOOT_MODE": "bios"}) == "bios"
@@ -120,4 +145,28 @@ class TestFreezeJobResolver:
 
         from stackbox.exceptions import JobResolutionError
         with pytest.raises(JobResolutionError, match="missing 'vars' key"):
+            resolver.resolve("test-job")
+
+    def test_resolve_404_gives_actionable_error(self):
+        from stackbox.exceptions import JobResolutionError, ZuulAPIError
+
+        client = MagicMock()
+        client.freeze_job.side_effect = ZuulAPIError(
+            "Zuul API request failed: 404 Client Error: Not Found"
+        )
+        resolver = FreezeJobResolver(client)
+
+        with pytest.raises(JobResolutionError, match="not defined for"):
+            resolver.resolve("ironic-tempest-bios-ipmi-direct", branch="master")
+
+    def test_resolve_non_404_reraises(self):
+        from stackbox.exceptions import ZuulAPIError
+
+        client = MagicMock()
+        client.freeze_job.side_effect = ZuulAPIError(
+            "Zuul API request failed: 500 Server Error"
+        )
+        resolver = FreezeJobResolver(client)
+
+        with pytest.raises(ZuulAPIError, match="500"):
             resolver.resolve("test-job")

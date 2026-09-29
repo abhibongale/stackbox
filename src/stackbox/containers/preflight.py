@@ -75,6 +75,34 @@ def check_ports(port_manager: PortManager, services: set[str] | None = None) -> 
     log.info("ports: OK (no conflicts)")
 
 
+def check_host_ovs() -> None:
+    # stackbox runs its own Open vSwitch in containers that share the host
+    # network namespace. A host-level ovs-vswitchd drives the *same* global
+    # kernel datapath (ovs-system); the two daemons then fight over datapath
+    # ports, so neutron's DHCP/cleaning internal ports flap and never bind.
+    # The visible symptom is a baremetal node stuck forever in "clean wait"
+    # (no DHCP -> no PXE), which is expensive to diagnose. Fail fast instead.
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", "openvswitch", "ovs-vswitchd"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        log.warning("Could not run 'systemctl' to check for host OVS, skipping")
+        return
+
+    if any(line.strip() == "active" for line in result.stdout.splitlines()):
+        raise PreflightError(
+            "A host-level Open vSwitch service is running (systemd). It shares "
+            "the kernel datapath (ovs-system) with stackbox's containerized OVS "
+            "and will silently break provisioning DHCP — baremetal nodes get "
+            "stuck in 'clean wait' because their PXE DHCP requests are never "
+            "answered.\nStop and disable it before running stackbox:\n"
+            "  sudo systemctl disable --now openvswitch ovs-vswitchd ovsdb-server"
+        )
+    log.info("host ovs: OK (no conflicting service)")
+
+
 def check_qemu_bridge_acl(bridge: str = "brbm-link") -> None:
     from pathlib import Path
 
@@ -104,6 +132,8 @@ def check_all(job: ResolvedJobConfig, port_manager: PortManager) -> None:
     check_qemu_bridge_acl()
 
     needed = required_containers(job)
+    if "openvswitch-vswitchd" in needed:
+        check_host_ovs()
     port_keys = set()
     for svc in needed:
         for key in BASE_PORTS:

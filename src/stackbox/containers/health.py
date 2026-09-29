@@ -66,6 +66,44 @@ def wait_exec(
     )
 
 
+# Container states that mean the process is gone for good. "restarting" and
+# "created" are transient (e.g. on-failure restart backoff) and tolerated so a
+# self-healing container doesn't trip a false hardfail.
+_DEAD_STATES = ("exited", "dead", "paused", "removing")
+
+
+def dead_container_status(backend: ContainerBackend, name: str) -> str | None:
+    """Return the container's state ("exited"/"dead"/...) if it has died, else None.
+
+    Returns None when the container is running, restarting, or cannot be
+    inspected (missing container) so callers never hardfail on transient or
+    absent state.
+    """
+    try:
+        data = backend.inspect(name)
+    except Exception:
+        return None
+    status = (data.get("State") or {}).get("Status")
+    return status if status in _DEAD_STATES else None
+
+
+def assert_containers_alive(backend: ContainerBackend, names: list[str]) -> None:
+    """Hardfail immediately if any named container has died.
+
+    Long deploy waits (node cleaning, power sync) poll for a state change that
+    can never happen once a service underneath crashes. Rather than block until
+    the timeout, surface the dead container and its recent logs right away.
+    """
+    for name in names:
+        status = dead_container_status(backend, name)
+        if status is not None:
+            logs = backend.logs(name, tail=40)
+            raise BootstrapError(
+                f"Critical container {name} is {status}; aborting deploy.\n"
+                f"Recent logs:\n{logs}"
+            )
+
+
 def check(backend: ContainerBackend, spec: ContainerSpec) -> None:
     hc = spec.health_check
     if hc is None:

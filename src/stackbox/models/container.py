@@ -27,4 +27,7 @@ class ContainerSpec(BaseModel):
     entrypoint: list[str] | None = None
     health_check: HealthCheck | None = None
     security_opts: list[str] = []
+    # Docker restart policy (e.g. "on-failure:5"). Used for the OVS containers so
+    # a vswitchd crash self-heals instead of silently killing the dataplane.
+    restart_policy: str | None = None
     extra_args: list[str] = []

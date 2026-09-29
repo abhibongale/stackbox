@@ -41,6 +41,43 @@ class TestRequiredContainers:
         assert "dnsmasq" not in needed
         assert "ironic-pxe" not in needed
 
+    def test_disabled_services_are_dropped(self):
+        # An API-only job (like ironic-tempest-functional-python3) explicitly
+        # disables nova/glance/placement; those containers must not be planned.
+        job = ResolvedJobConfig(
+            job_name="functional",
+            devstack_services={
+                "n-api": False, "n-sch": False, "n-cond": False, "n-cpu": False,
+                "g-api": False, "placement-api": False,
+            },
+        )
+        needed = required_containers(job)
+        for dropped in (
+            "nova-api", "nova-scheduler", "nova-conductor", "nova-compute",
+            "nova-libvirt", "glance-api", "placement-api",
+        ):
+            assert dropped not in needed, dropped
+        # ironic, keystone, neutron, mariadb still required.
+        assert {"ironic-api", "keystone", "neutron-server", "mariadb"} <= needed
+
+    def test_no_bmc_when_compute_disabled(self):
+        # Without nova-compute there is nothing to enroll, so no BMC is planned.
+        job = ResolvedJobConfig(
+            job_name="functional",
+            bmc_driver="redfish",
+            devstack_services={"n-cpu": False},
+        )
+        needed = required_containers(job)
+        assert "sushy-tools" not in needed
+        assert "vbmc" not in needed
+
+    def test_absent_toggles_keep_full_stack(self):
+        # A job that doesn't mention the toggles keeps the full stack (devstack
+        # default is enabled), preserving behavior for existing jobs.
+        job = ResolvedJobConfig(job_name="default", bmc_driver="redfish")
+        needed = required_containers(job)
+        assert {"nova-api", "glance-api", "placement-api", "nova-compute"} <= needed
+
     def test_pxe_uses_neutron_dhcp_not_standalone_dnsmasq(self):
         # PXE provisioning DHCP is served by Neutron's dnsmasq (dhcp-agent),
         # not a standalone dnsmasq. PXE still needs a TFTP server (ironic-pxe).
@@ -187,6 +224,29 @@ class TestBuildContainerSpecs:
         compute = next(s for s in specs if s.name == "stackbox-nova-compute")
         vol_targets = [v.target for v in compute.volumes]
         assert "/var/run/libvirt/" in vol_targets
+
+    def test_ovs_containers_have_restart_policy(self, vmedia_job, tmp_path):
+        # vswitchd has segfaulted under rapid bridge reconfiguration; without a
+        # restart policy that silently kills the dataplane and wedges the deploy.
+        pm = PortManager()
+        specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
+        for name in ("stackbox-openvswitch-vswitchd", "stackbox-openvswitch-db-server"):
+            spec = next(s for s in specs if s.name == name)
+            assert spec.restart_policy == "on-failure:5", name
+
+    def test_vbmc_mounts_host_session_libvirt(self, tmp_path):
+        # vbmc must reach the host session libvirt (where the baremetal VMs are
+        # defined), not the nova-libvirt shared socket, or `vbmc add` fails with
+        # "No domain with matching name ... was found".
+        from stackbox.baremetal.libvirt import LIBVIRT_RUN_DIR
+
+        job = ResolvedJobConfig(job_name="ipmi-test", bmc_driver="ipmi")
+        pm = PortManager()
+        specs = build_container_specs(job, tmp_path, pm, "2025.1-ubuntu-noble")
+        vbmc = next(s for s in specs if s.name == "stackbox-vbmc")
+        vol_targets = [v.target for v in vbmc.volumes]
+        assert LIBVIRT_RUN_DIR in vol_targets
+        assert "/var/run/libvirt/" not in vol_targets
 
     def test_image_override_replaces_kolla(self, tmp_path):
         job = ResolvedJobConfig(job_name="test")

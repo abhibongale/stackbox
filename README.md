@@ -64,9 +64,17 @@ stackbox clean
 --release TAG         Kolla image release tag
 --project PROJECT     OpenStack project (default: openstack/ironic)
 --branch BRANCH       Git branch (default: master)
+--pipeline PIPELINE   Zuul pipeline (default: gate; use check for check-only jobs)
 ```
 
 Run `stackbox <command> --help` for the full list of options per command.
+
+> **Note:** `stackbox list` shows every job across *all* branches of a project,
+> because that is how the Zuul project API aggregates configs. A job may be
+> defined only on a stable/bugfix branch (not `master`), so resolving it with the
+> default `--branch master` returns a "not defined" error. Use `stackbox list
+> --branch master` to see only what `run` will resolve by default, and pass
+> `--pipeline check` for check-only jobs.
 
 ## Supported Boot Modes
 
@@ -74,6 +82,39 @@ Run `stackbox <command> --help` for the full list of options per command.
 |---------------|------------|-------------|
 | `redfish-virtual-media` | `redfish` | UEFI virtual media boot via sushy-tools |
 | `pxe` / `ipxe` | `ipmi` | PXE/iPXE boot via VBMC and dnsmasq |
+
+## Job Support
+
+STACKBOX targets single-host Ironic jobs. It reads each job's `devstack_services`
+and `devstack_localrc` and deploys only the services the job enables, so
+API/functional jobs bring up a smaller stack than full deploy jobs.
+
+### Supported
+
+- **redfish + virtual media** (UEFI and BIOS) — the best-supported deploy path.
+- **ipmi + PXE/iPXE boot** — via VBMC; the TFTP/`ironic-pxe` container is added
+  automatically for network-boot jobs.
+- **`direct` and `partition`/`wholedisk` deploy interfaces**.
+- **Functional / API-only jobs** (e.g. `ironic-tempest-functional-python3`) —
+  nova/glance/placement are automatically skipped when the job disables them.
+- **Cinder** (block storage) when a job enables `c-api`.
+
+### Not supported (yet)
+
+These jobs resolve and plan, but will not deploy correctly:
+
+| Feature | Example job | Why |
+|---------|-------------|-----|
+| OVN networking | `ironic-tempest-ovn-*` | STACKBOX wires OVS/ML2 only |
+| Multinode | `ironic-tempest-ipa-wholedisk-direct-multinode` | Single-host only |
+| Boot from volume | `ironic-tempest-bfv` | `IRONIC_STORAGE_INTERFACE` not implemented |
+| Standalone / no-auth | `ironic-tempest-standalone-advanced` | Provider networks + standalone mode |
+| DIB image building | `*-dib`, `*-4k` | STACKBOX uses a prebuilt IPA ramdisk |
+| IPv6 provisioning | `ironic-tempest-ovn-uefi-ipxe-ipv6` | IPv4 provisioning network only |
+| VNC console provider | `ironic-tempest-vnc-container` | No VNC container provider |
+
+Unmapped `devstack_localrc` keys are logged as a warning during resolution and
+are a good signal that a job depends on an unsupported feature.
 
 ## Local Development
 
@@ -154,6 +195,39 @@ STACKBOX follows XDG conventions:
 | `~/.local/share/stackbox/sessions/` | Session data (configs, manifests, results) |
 | `~/.local/share/stackbox/logs/` | Log files |
 | `~/.cache/stackbox/repos/` | Cached git repositories for offline mode |
+
+## Known Issues
+
+### Local image builds fail with `exec: "/bin/sh": no such file or directory`
+
+On some hosts (notably very new kernels with Docker's **containerd image
+store**, the default since Docker 25), a `RUN` step can fail with:
+
+```
+runc run failed: ... error during container init: exec: "/bin/sh": ...
+no such file or directory
+```
+
+This is the containerd snapshotter committing an empty/corrupt layer — not a
+STACKBOX or Containerfile bug. STACKBOX retries such builds with `--no-cache`
+automatically, which clears the usual transient case. If it persists, disable
+the containerd snapshotter and restart Docker:
+
+```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json > /dev/null <<'EOF'
+{
+  "features": {
+    "containerd-snapshotter": false
+  }
+}
+EOF
+sudo systemctl restart docker
+docker info --format '{{.Driver}}'   # should print: overlay2
+```
+
+Switching image stores hides existing images (kept, not deleted, in the other
+store); STACKBOX rebuilds/pulls what it needs.
 
 ## License
 

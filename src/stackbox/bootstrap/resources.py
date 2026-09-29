@@ -4,7 +4,7 @@ import logging
 
 from stackbox.config_gen.ports import PortManager
 from stackbox.containers.backend import ContainerBackend
-from stackbox.exceptions import BootstrapError
+from stackbox.exceptions import BootstrapError, ContainerError
 from stackbox.models.job_config import ResolvedJobConfig
 
 log = logging.getLogger(__name__)
@@ -87,6 +87,52 @@ IPA_KERNEL = "ipa-centos9-master.kernel"
 IPA_RAMDISK = "ipa-centos9-master.initramfs"
 
 
+def _download_in_container(
+    backend: ContainerBackend,
+    url: str,
+    dest: str,
+    timeout: int = 1800,
+    retries: int = 3,
+    read_timeout: int = 60,
+) -> tuple[int, str]:
+    """Download ``url`` to ``dest`` inside CONTAINER, robustly.
+
+    Streams in chunks with a per-socket timeout and retries so a stalled
+    connection fails fast and recovers, instead of the old one-shot
+    ``urlretrieve`` (no timeout/retry) which would hang until the docker
+    exec timeout and raise ContainerError, aborting the whole bootstrap.
+    Returns ``(exit_code, output)`` and never raises on timeout.
+    """
+    script = (
+        "import urllib.request, socket, os, sys\n"
+        f"url, dest, retries, rt = {url!r}, {dest!r}, {retries}, {read_timeout}\n"
+        "socket.setdefaulttimeout(rt)\n"
+        "err = None\n"
+        "for _ in range(retries):\n"
+        "    try:\n"
+        "        with urllib.request.urlopen(url, timeout=rt) as r, "
+        "open(dest, 'wb') as f:\n"
+        "            while True:\n"
+        "                chunk = r.read(1 << 20)\n"
+        "                if not chunk:\n"
+        "                    break\n"
+        "                f.write(chunk)\n"
+        "        sys.exit(0)\n"
+        "    except Exception as e:\n"
+        "        err = e\n"
+        "        try:\n"
+        "            os.remove(dest)\n"
+        "        except OSError:\n"
+        "            pass\n"
+        "sys.stderr.write('download failed after %d attempts: %s' % (retries, err))\n"
+        "sys.exit(1)\n"
+    )
+    try:
+        return backend.exec(CONTAINER, ["python3", "-c", script], timeout=timeout)
+    except ContainerError as exc:
+        return 1, str(exc)
+
+
 def _image_has_data(
     backend: ContainerBackend,
     env: list[str],
@@ -130,12 +176,7 @@ def _get_or_create_deploy_image(
         _delete_image(backend, env, name)
 
     img_path = f"/tmp/{name}"
-    ec, out = backend.exec(
-        CONTAINER,
-        ["python3", "-c",
-         f"import urllib.request; urllib.request.urlretrieve('{url}', '{img_path}')"],
-        timeout=300,
-    )
+    ec, out = _download_in_container(backend, url, img_path, timeout=1800)
     if ec != 0:
         log.warning("Failed to download %s: %s", name, out)
         return None
@@ -206,12 +247,7 @@ def _get_or_create_test_image(
     img_url = "http://download.cirros-cloud.net/0.6.2/cirros-0.6.2-x86_64-disk.img"
     img_path = "/tmp/cirros-test.img"
 
-    ec, out = backend.exec(
-        CONTAINER,
-        ["python3", "-c",
-         f"import urllib.request; urllib.request.urlretrieve('{img_url}', '{img_path}')"],
-        timeout=120,
-    )
+    ec, out = _download_in_container(backend, img_url, img_path, timeout=600)
     if ec != 0:
         log.warning("Failed to download test image: %s", out)
         return None
@@ -276,17 +312,27 @@ def setup_resources(
     port_manager: PortManager,
     admin_pass: str,
 ) -> dict[str, str]:
-    create_baremetal_flavor(backend, job, port_manager, admin_pass)
-    deploy_images = upload_deploy_images(backend, port_manager, admin_pass)
+    # A flavor is a nova concept; deploy/test images live in glance. Jobs that
+    # disable those services (e.g. functional/API-only jobs) neither need nor
+    # can create these — skip to avoid pointless large downloads and warnings.
+    nova_enabled = job.devstack_services.get("n-api", True)
+    glance_enabled = job.devstack_services.get("g-api", True)
 
     resolved = {}
-    flavor_id = _get_flavor_uuid(backend, port_manager, admin_pass)
-    if flavor_id:
-        resolved["{{baremetal_flavor_uuid}}"] = flavor_id
 
-    image_id = _get_or_create_test_image(backend, port_manager, admin_pass)
-    if image_id:
-        resolved["{{test_image_uuid}}"] = image_id
+    if nova_enabled:
+        create_baremetal_flavor(backend, job, port_manager, admin_pass)
+        flavor_id = _get_flavor_uuid(backend, port_manager, admin_pass)
+        if flavor_id:
+            resolved["{{baremetal_flavor_uuid}}"] = flavor_id
+
+    deploy_images: dict[str, str] = {}
+    if glance_enabled:
+        deploy_images = upload_deploy_images(backend, port_manager, admin_pass)
+
+        image_id = _get_or_create_test_image(backend, port_manager, admin_pass)
+        if image_id:
+            resolved["{{test_image_uuid}}"] = image_id
 
     network_id = _get_network_uuid(backend, port_manager, admin_pass)
     if network_id:

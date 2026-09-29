@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from stackbox.baremetal.enrollment import enroll_nodes, _os_env, _wait_for_ironic, _wait_for_state, _wait_for_power_sync
+from stackbox.baremetal.enrollment import CLEAN_TIMEOUT, enroll_nodes, _os_env, _wait_for_ironic, _wait_for_state, _wait_for_power_sync
 from stackbox.config_gen.ports import PortManager
 from stackbox.exceptions import BootstrapError
 from stackbox.models.baremetal import BMCConfig, BMCType, VirtualBMNode
@@ -68,6 +68,37 @@ class TestWaitForState:
         env = _os_env("pass", 5000)
         with pytest.raises(BootstrapError, match="did not reach"):
             _wait_for_state(backend, env, "node-1", "manageable", timeout=0.1)
+
+    def test_aborts_on_terminal_state_with_last_error(self):
+        # A node that lands in "clean failed" never recovers; abort immediately
+        # with its last_error instead of polling until the timeout.
+        backend = MagicMock()
+
+        def smart_exec(container, cmd):
+            cmd_str = " ".join(cmd)
+            if "provision_state" in cmd_str:
+                return (0, "clean failed")
+            if "last_error" in cmd_str:
+                return (0, "Timeout reached while cleaning the node")
+            return (0, "OK")
+
+        backend.exec.side_effect = smart_exec
+        env = _os_env("pass", 5000)
+        with pytest.raises(BootstrapError, match="clean failed.*Timeout reached"):
+            _wait_for_state(backend, env, "node-1", "available", timeout=30)
+
+    def test_aborts_when_critical_container_dead(self):
+        # A dead dataplane container wedges cleaning forever; hardfail fast.
+        backend = MagicMock()
+        backend.exec.return_value = (0, "clean wait")
+        backend.inspect.return_value = {"State": {"Status": "exited"}}
+        backend.logs.return_value = "vswitchd segfault"
+        env = _os_env("pass", 5000)
+        with pytest.raises(BootstrapError, match="Critical container"):
+            _wait_for_state(
+                backend, env, "node-1", "available", timeout=30,
+                critical_containers=["stackbox-openvswitch-vswitchd"],
+            )
 
 
 class TestWaitForIronic:
@@ -163,6 +194,20 @@ class TestEnrollNodes:
         assert any("node manage" in cmd for cmd in all_cmds)
         assert any("node provide" in cmd for cmd in all_cmds)
         assert mock_wait.call_count == 2
+
+    @patch("stackbox.baremetal.enrollment._wait_for_power_sync")
+    @patch("stackbox.baremetal.enrollment._wait_for_ironic")
+    @patch("stackbox.baremetal.enrollment._wait_for_state")
+    def test_cleaning_wait_uses_long_timeout(self, mock_wait, mock_wait_ironic, mock_power, mock_backend, redfish_node):
+        # Reaching "available" runs cleaning (PXE + disk wipe), which needs far
+        # longer than the default state-transition budget.
+        pm = PortManager()
+        enroll_nodes(mock_backend, [redfish_node], pm, "admin_pass")
+
+        available_calls = [c for c in mock_wait.call_args_list if c.args[3] == "available"]
+        assert len(available_calls) == 1
+        assert available_calls[0].kwargs["timeout"] == CLEAN_TIMEOUT
+        assert CLEAN_TIMEOUT >= 600
 
     @patch("stackbox.baremetal.enrollment._wait_for_power_sync")
     @patch("stackbox.baremetal.enrollment._wait_for_ironic")

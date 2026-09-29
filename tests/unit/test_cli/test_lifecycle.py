@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from rich.console import Console
 
-from stackbox.cli.main import _graceful_shutdown
+from stackbox.cli.main import _graceful_shutdown, _prune_stale_sessions
 
 
 class TestGracefulShutdown:
@@ -53,3 +53,44 @@ class TestEnsureDirs:
         assert (tmp_path / "data" / "sessions").is_dir()
         assert (tmp_path / "cache" / "repos").is_dir()
         assert (tmp_path / "data" / "logs").is_dir()
+
+
+class TestPruneStaleSessions:
+
+    def _sessions(self, tmp_path, monkeypatch, names):
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        for name in names:
+            (sessions_dir / name).mkdir()
+        monkeypatch.setattr("stackbox.cli.main.SESSIONS_DIR", sessions_dir)
+        return sessions_dir
+
+    def test_prunes_all_when_no_containers_remain(self, tmp_path, monkeypatch):
+        sessions_dir = self._sessions(tmp_path, monkeypatch, ["aaa", "bbb", "ccc"])
+        backend = MagicMock()
+        backend.list_containers.return_value = []
+        console = Console(file=MagicMock())
+
+        _prune_stale_sessions(backend, console)
+
+        assert list(sessions_dir.iterdir()) == []
+        backend.list_containers.assert_called_once_with(prefix="stackbox-")
+
+    def test_keeps_sessions_when_stack_still_up(self, tmp_path, monkeypatch):
+        sessions_dir = self._sessions(tmp_path, monkeypatch, ["aaa", "bbb"])
+        backend = MagicMock()
+        backend.list_containers.return_value = [{"Names": ["stackbox-mariadb"]}]
+        console = Console(file=MagicMock())
+
+        _prune_stale_sessions(backend, console)
+
+        assert {p.name for p in sessions_dir.iterdir()} == {"aaa", "bbb"}
+
+    def test_no_sessions_dir_is_noop(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("stackbox.cli.main.SESSIONS_DIR", tmp_path / "missing")
+        backend = MagicMock()
+        console = Console(file=MagicMock())
+
+        _prune_stale_sessions(backend, console)  # must not raise
+
+        backend.list_containers.assert_not_called()
