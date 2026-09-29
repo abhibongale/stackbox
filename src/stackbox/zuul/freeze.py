@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stackbox.exceptions import JobResolutionError
+from stackbox.exceptions import JobResolutionError, ZuulAPIError
 from stackbox.models.job_config import ResolvedJobConfig, VMSpecs
 from stackbox.zuul.api import ZuulClient
 
@@ -30,16 +30,47 @@ def extract_vm_specs(localrc: dict[str, str]) -> VMSpecs:
     )
 
 
+def _hardware_types_raw(localrc: dict[str, str]) -> str:
+    """The job's hardware type(s), as a comma-separated string.
+
+    IRONIC_ENABLED_HARDWARE_TYPES is only set by some jobs; when absent devstack
+    derives it from IRONIC_DEPLOY_DRIVER (which is always set — e.g. 'ipmi',
+    'redfish'). Reading only IRONIC_ENABLED_HARDWARE_TYPES made every IPMI job
+    fall back to the 'redfish' default, so stackbox planned sushy-tools instead
+    of vbmc and could not control the nodes.
+    """
+    return (
+        localrc.get("IRONIC_ENABLED_HARDWARE_TYPES")
+        or localrc.get("IRONIC_DEPLOY_DRIVER")
+        or "redfish"
+    )
+
+
 def detect_bmc_driver(localrc: dict[str, str]) -> str:
-    hw_types = localrc.get("IRONIC_ENABLED_HARDWARE_TYPES", "redfish")
+    hw_types = _hardware_types_raw(localrc)
     if "ipmi" in hw_types:
         return "ipmi"
     return "redfish"
 
 
+def _ipxe_enabled(localrc: dict[str, str]) -> bool:
+    # devstack-plugin-ironic defaults IRONIC_IPXE_ENABLED to True.
+    raw = str(localrc.get("IRONIC_IPXE_ENABLED", "True")).strip().lower()
+    return raw not in ("false", "0", "no", "")
+
+
 def detect_boot_interface(localrc: dict[str, str]) -> str:
-    raw = localrc.get("IRONIC_ENABLED_BOOT_INTERFACES", "redfish-virtual-media")
-    return raw.split(",")[0].strip()
+    explicit = localrc.get("IRONIC_ENABLED_BOOT_INTERFACES")
+    if explicit:
+        return explicit.split(",")[0].strip()
+
+    # Not pinned by the job: devstack derives the boot interface from the driver.
+    # redfish uses virtual media; ipmi (and other PXE-based types) boot over the
+    # network — iPXE unless explicitly disabled. Getting this right is what tells
+    # required_containers() to add the TFTP/ironic-pxe container for IPMI jobs.
+    if detect_bmc_driver(localrc) == "redfish":
+        return "redfish-virtual-media"
+    return "ipxe" if _ipxe_enabled(localrc) else "pxe"
 
 
 def detect_boot_mode(localrc: dict[str, str]) -> str:
@@ -49,7 +80,7 @@ def detect_boot_mode(localrc: dict[str, str]) -> str:
 
 
 def detect_hardware_types(localrc: dict[str, str]) -> list[str]:
-    raw = localrc.get("IRONIC_ENABLED_HARDWARE_TYPES", "redfish")
+    raw = _hardware_types_raw(localrc)
     return [t.strip() for t in raw.split(",") if t.strip()]
 
 
@@ -91,7 +122,18 @@ class FreezeJobResolver:
         branch: str = "master",
         pipeline: str = "gate",
     ) -> ResolvedJobConfig:
-        raw = self.client.freeze_job(pipeline, project, branch, job_name)
+        try:
+            raw = self.client.freeze_job(pipeline, project, branch, job_name)
+        except ZuulAPIError as exc:
+            if "404" in str(exc):
+                raise JobResolutionError(
+                    f"Job '{job_name}' is not defined for {project} on "
+                    f"pipeline '{pipeline}', branch '{branch}'. "
+                    f"It may only exist on another branch or pipeline "
+                    f"(run 'stackbox list --project {project}' to check "
+                    f"branch/pipeline scoping)."
+                ) from exc
+            raise
 
         job_vars = raw.get("vars")
         if job_vars is None:

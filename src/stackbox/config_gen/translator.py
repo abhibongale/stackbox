@@ -15,6 +15,11 @@ class DevStackTranslator:
             target = self.mapping.get(key)
             if target is None:
                 continue
+            # In devstack, an empty string means "unset — use the service's own
+            # default". Never write it to a config file; doing so causes Ironic
+            # (and other services) to look up an interface/driver named "" and crash.
+            if value == "":
+                continue
 
             service, section, option = target
             result.setdefault(service, {}).setdefault(section, {})[option] = value

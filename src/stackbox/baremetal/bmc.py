@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from stackbox.baremetal.libvirt import SESSION_LIBVIRT_URI
 from stackbox.containers.backend import ContainerBackend
 from stackbox.containers.health import wait_tcp
 from stackbox.exceptions import BootstrapError
@@ -32,6 +33,9 @@ def setup_vbmc(
             "--port", str(port),
             "--username", node.bmc.username,
             "--password", node.bmc.password,
+            # Point vbmc at the host session libvirt where create_nodes() defined
+            # the domain; the container's default qemu:///system has no such node.
+            "--libvirt-uri", SESSION_LIBVIRT_URI,
         ])
         if exit_code != 0:
             raise BootstrapError(f"vbmc add {node.name} failed: {output}")

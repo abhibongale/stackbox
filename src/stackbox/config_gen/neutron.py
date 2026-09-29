@@ -47,20 +47,18 @@ class NeutronConfigGenerator(ServiceConfigGenerator):
         ml2_config.optionxform = str
 
         mechanism = lr.get("Q_ML2_PLUGIN_MECHANISM_DRIVERS", "openvswitch")
-        tenant_type = lr.get("Q_ML2_TENANT_NETWORK_TYPE", "vxlan")
 
+        # Flat single-host networking (see neutron_agents.py): the OVS agent has
+        # no overlay tunnels, so don't advertise vxlan tenant segments it can't
+        # bind. The provisioning network is flat on physnet1.
         ml2_config["ml2"] = {
-            "type_drivers": f"flat,vlan,vxlan,{tenant_type}" if tenant_type not in ("flat", "vlan", "vxlan") else "flat,vlan,vxlan",
-            "tenant_network_types": tenant_type,
+            "type_drivers": "flat,vlan",
+            "tenant_network_types": "flat",
             "mechanism_drivers": mechanism,
         }
 
         ml2_config["ml2_type_flat"] = {
             "flat_networks": "physnet1",
-        }
-
-        ml2_config["ml2_type_vxlan"] = {
-            "vni_ranges": "1:1000",
         }
 
         if "openvswitch" in mechanism:

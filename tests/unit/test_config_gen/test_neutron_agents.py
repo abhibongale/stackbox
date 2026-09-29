@@ -38,19 +38,16 @@ class TestNeutronAgentConfigGenerator:
         config.read_string(gen.generate()["openvswitch_agent.ini"])
         assert config["securitygroup"]["firewall_driver"] == "noop"
 
-    def test_ovs_agent_local_ip(self, vmedia_job_config, port_manager):
+    def test_ovs_agent_no_overlay_tunnels(self, vmedia_job_config, port_manager):
+        # Single-host flat networking: no VXLAN tunnels. Enabling them with a
+        # loopback local_ip built a br-tun that flapped and segfaulted vswitchd,
+        # wedging the dataplane. tunnel_types must be empty and no local_ip set.
         gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
         config = ConfigParser()
         config.optionxform = str
         config.read_string(gen.generate()["openvswitch_agent.ini"])
-        assert config["ovs"]["local_ip"] == "127.0.0.1"
-
-    def test_ovs_agent_tunnel_types(self, vmedia_job_config, port_manager):
-        gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)
-        config = ConfigParser()
-        config.optionxform = str
-        config.read_string(gen.generate()["openvswitch_agent.ini"])
-        assert config["agent"]["tunnel_types"] == "vxlan"
+        assert config["agent"]["tunnel_types"] == ""
+        assert "local_ip" not in config["ovs"]
 
     def test_dhcp_agent_interface_driver(self, vmedia_job_config, port_manager):
         gen = NeutronAgentConfigGenerator(vmedia_job_config, port_manager)

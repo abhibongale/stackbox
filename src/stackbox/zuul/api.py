@@ -57,12 +57,16 @@ class ZuulClient:
         self,
         project: str,
         pipeline: str | None = None,
+        branch: str | None = None,
     ) -> list[dict]:
         encoded_project = quote(project, safe="")
         data = self._get(f"tenant/{self.tenant}/project/{encoded_project}")
 
         jobs = []
         for config in data.get("configs", []):
+            config_branch = config.get("source_context", {}).get("branch", "")
+            if branch and config_branch != branch:
+                continue
             for pipe in config.get("pipelines", []):
                 if pipeline and pipe.get("name") != pipeline:
                     continue
@@ -72,5 +76,6 @@ class ZuulClient:
                             "name": job.get("name", ""),
                             "voting": job.get("voting", True),
                             "pipeline": pipe.get("name", ""),
+                            "branch": config_branch,
                         })
         return jobs

@@ -58,5 +58,9 @@ class ContainerBackend(ABC):
         """Create a named volume."""
 
     @abstractmethod
-    def remove_volume(self, name: str) -> None:
-        """Remove a named volume."""
+    def list_volumes(self, prefix: str = "") -> list[str]:
+        """List volume names, optionally filtered by name prefix."""
+
+    @abstractmethod
+    def remove_volume(self, name: str) -> bool:
+        """Remove a named volume. Returns True on success, False otherwise."""

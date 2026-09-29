@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from stackbox.baremetal.bmc import setup_vbmc, wait_for_bmc
-from stackbox.baremetal.enrollment import enroll_nodes
+from stackbox.baremetal.enrollment import CRITICAL_CONTAINERS, enroll_nodes
 from stackbox.baremetal.libvirt import LibvirtManager
 from stackbox.bootstrap.database import init_database
 from stackbox.bootstrap.dbsync import run_dbsync
@@ -81,7 +81,10 @@ class BootstrapOrchestrator:
         log.info("Patched tempest.conf with %d resolved values", len(replacements))
 
     def run(self) -> None:
-        LibvirtManager.ensure_running()
+        # libvirt only matters for the baremetal phase; API-only jobs without a
+        # compute host don't need it, so don't require it on such machines.
+        if "stackbox-nova-compute" in self._specs_by_name():
+            LibvirtManager.ensure_running()
 
         phases = [
             ("Create shared volumes", self._create_volumes),
@@ -186,17 +189,27 @@ class BootstrapOrchestrator:
             self.manifest.record_container("stackbox-keystone")
 
     def _setup_baremetal(self) -> None:
+        # Baremetal enrollment provisions VMs into nova via a hypervisor and BMC.
+        # Jobs that disable nova-compute (e.g. functional/API-only jobs, whose
+        # tempest tests create their own fake nodes over the API) have neither a
+        # BMC container nor a compute host, so there is nothing to enroll.
+        if "stackbox-nova-compute" not in self._specs_by_name():
+            log.info("nova-compute not deployed; skipping baremetal enrollment")
+            return
+
         LibvirtManager.ensure_running()
         libvirt = LibvirtManager(backend=self.backend)
+
+        bmc_type = BMCType.REDFISH if self.job.bmc_driver == "redfish" else BMCType.IPMI
+
         nodes = libvirt.create_nodes(
             self.job.vm_specs,
             boot_interface=self.job.boot_interface,
             firmware=self.job.boot_mode,
+            bmc_type=bmc_type,
         )
         for node in nodes:
             self.manifest.record_domain(node.name)
-
-        bmc_type = BMCType.REDFISH if self.job.bmc_driver == "redfish" else BMCType.IPMI
 
         if bmc_type == BMCType.IPMI:
             base_port = self.port_manager.get("vbmc-base")
@@ -206,7 +219,12 @@ class BootstrapOrchestrator:
         wait_for_bmc(bmc_type, bmc_port)
 
         deploy_images = getattr(self, "_deploy_images", None)
-        enroll_nodes(self.backend, nodes, self.port_manager, self.admin_pass, deploy_images)
+        by_name = self._specs_by_name()
+        critical = [name for name in CRITICAL_CONTAINERS if name in by_name]
+        enroll_nodes(
+            self.backend, nodes, self.port_manager, self.admin_pass, deploy_images,
+            critical_containers=critical,
+        )
         log.info("Baremetal setup complete: %d nodes enrolled", len(nodes))
 
         self._sync_nova_compute()

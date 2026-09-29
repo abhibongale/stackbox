@@ -37,6 +37,17 @@ class TestNeutronConfigGenerator:
         config.read_string(gen.generate()["ml2_conf.ini"])
         assert config["ml2"]["mechanism_drivers"] == "openvswitch,linuxbridge"
 
+    def test_ml2_flat_tenant_networks_no_vxlan(self, vmedia_job_config, port_manager):
+        # The OVS agent runs without overlay tunnels (single-host flat), so the
+        # plugin must not advertise vxlan tenant segments it can't bind.
+        gen = NeutronConfigGenerator(vmedia_job_config, port_manager)
+        config = ConfigParser()
+        config.optionxform = str
+        config.read_string(gen.generate()["ml2_conf.ini"])
+        assert config["ml2"]["tenant_network_types"] == "flat"
+        assert "vxlan" not in config["ml2"]["type_drivers"]
+        assert "ml2_type_vxlan" not in config
+
     def test_ovs_bridge_mappings_when_openvswitch(self, vmedia_job_config, port_manager):
         gen = NeutronConfigGenerator(vmedia_job_config, port_manager)
         config = ConfigParser()

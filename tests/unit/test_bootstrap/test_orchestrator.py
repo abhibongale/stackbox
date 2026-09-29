@@ -110,6 +110,52 @@ class TestBootstrapOrchestrator:
         assert "stackbox-neutron-server" in started
         assert "stackbox-ironic-api" in started
 
+    @patch("stackbox.bootstrap.orchestrator.enroll_nodes")
+    @patch("stackbox.bootstrap.orchestrator.wait_for_bmc")
+    @patch("stackbox.bootstrap.orchestrator.setup_vbmc")
+    @patch("stackbox.bootstrap.orchestrator.LibvirtManager")
+    def test_ipmi_job_creates_ipmi_nodes(
+        self, mock_libvirt_cls, mock_vbmc, mock_wait_bmc, mock_enroll,
+        mock_backend, manifest, tmp_path,
+    ):
+        # An IPMI job must register nodes with the ipmi driver, or the conductor
+        # (which only enables ipmi) rejects them: "No conductor service registered
+        # which supports driver redfish".
+        from stackbox.models.baremetal import BMCType
+
+        mock_libvirt = MagicMock()
+        mock_libvirt.create_nodes.return_value = []
+        mock_libvirt_cls.return_value = mock_libvirt
+
+        job = ResolvedJobConfig(
+            job_name="ipmi-job", bmc_driver="ipmi", boot_interface="ipxe",
+        )
+        orch = BootstrapOrchestrator(mock_backend, job, tmp_path, manifest)
+        orch._setup_baremetal()
+
+        assert mock_libvirt.create_nodes.call_args.kwargs["bmc_type"] == BMCType.IPMI
+        mock_vbmc.assert_called_once()
+
+    @patch("stackbox.bootstrap.orchestrator.enroll_nodes")
+    @patch("stackbox.bootstrap.orchestrator.wait_for_bmc")
+    @patch("stackbox.bootstrap.orchestrator.setup_vbmc")
+    @patch("stackbox.bootstrap.orchestrator.LibvirtManager")
+    def test_redfish_job_creates_redfish_nodes(
+        self, mock_libvirt_cls, mock_vbmc, mock_wait_bmc, mock_enroll,
+        mock_backend, job, manifest, tmp_path,
+    ):
+        from stackbox.models.baremetal import BMCType
+
+        mock_libvirt = MagicMock()
+        mock_libvirt.create_nodes.return_value = []
+        mock_libvirt_cls.return_value = mock_libvirt
+
+        orch = BootstrapOrchestrator(mock_backend, job, tmp_path, manifest)
+        orch._setup_baremetal()
+
+        assert mock_libvirt.create_nodes.call_args.kwargs["bmc_type"] == BMCType.REDFISH
+        mock_vbmc.assert_not_called()
+
     def test_image_overrides_propagate_to_specs(self, mock_backend, job, manifest, tmp_path):
         overrides = {"ironic-api": "custom-ironic:dev"}
         orch = BootstrapOrchestrator(

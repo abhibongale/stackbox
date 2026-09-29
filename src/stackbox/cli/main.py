@@ -105,19 +105,34 @@ def _print_dry_run(console, config, release, local_repos=None):
         console.print(f"  {vol_name} -> {mount_path}")
     console.print()
 
+    names = {s.name.removeprefix("stackbox-") for s in specs}
+    has_nova = "nova-compute" in names
+
+    dbsync_services = [
+        svc for svc in ("glance-api", "neutron-server", "nova-api", "placement-api", "ironic-api")
+        if svc in names
+    ]
+
+    resource_bits = ["OVS bridges", "provisioning network"]
+    if "nova-api" in names:
+        resource_bits.append("flavor")
+    if "glance-api" in names:
+        resource_bits.append("deploy images")
+
+    baremetal_line = (
+        f"Create {config.vm_specs.count} VMs, start BMC ({config.bmc_driver}), enroll nodes"
+        if has_nova
+        else "(skipped — nova-compute not deployed)"
+    )
+
     phases = [
         ("1. Infrastructure", ["mariadb", "rabbitmq", "memcached", "keystone"]),
         ("2. Keystone bootstrap", ["keystone (db_sync, fernet, bootstrap, users)"]),
         ("3. Service catalog", ["Register endpoints in Keystone"]),
-        ("4. Database sync", ["glance, neutron, nova, placement, ironic (parallel)"]),
-        ("5. Start services", [", ".join(s) for group in [
-            ["placement-api"], ["glance-api"],
-            ["OVS"], ["neutron-server", "agents"],
-            ["nova-api", "nova-scheduler", "nova-conductor"],
-            ["ironic-api", "ironic-conductor"], ["nova-compute"],
-        ] for s in [group]]),
-        ("6. Network & resources", ["OVS bridges, provisioning network, flavor, deploy images"]),
-        ("7. Baremetal", [f"Create {config.vm_specs.count} VMs, start BMC ({config.bmc_driver}), enroll nodes"]),
+        ("4. Database sync", [", ".join(dbsync_services) + " (parallel)"]),
+        ("5. Start services", [", ".join(sorted(names))]),
+        ("6. Network & resources", [", ".join(resource_bits)]),
+        ("7. Baremetal", [baremetal_line]),
         ("8. Tempest", [config.tempest_test_regex or "(skipped)"]),
     ]
 
@@ -247,7 +262,8 @@ def init(release):
 @click.option("--release", default=DEFAULT_RELEASE, help="Kolla image release tag")
 @click.option("--project", default="openstack/ironic", help="OpenStack project")
 @click.option("--branch", default="master", help="Git branch")
-def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep, release, project, branch):
+@click.option("--pipeline", default="gate", help="Zuul pipeline (e.g. gate, check)")
+def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep, release, project, branch, pipeline):
     """Run a Zuul CI job locally."""
     from pathlib import Path
 
@@ -259,8 +275,13 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
     console = Console()
     local_repos = _parse_local_repos(local_repo)
 
-    with console.status(f"Resolving job [bold]{job_name}[/bold]..."):
-        config = _resolve_job(job_name, offline, project=project, branch=branch)
+    from stackbox.exceptions import JobResolutionError, ZuulAPIError
+
+    try:
+        with console.status(f"Resolving job [bold]{job_name}[/bold]..."):
+            config = _resolve_job(job_name, offline, project=project, branch=branch, pipeline=pipeline)
+    except (JobResolutionError, ZuulAPIError) as exc:
+        raise click.ClickException(str(exc)) from exc
 
     config.local_repos = local_repos
     config.port_offset = port_offset
@@ -485,7 +506,8 @@ def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, r
 @cli.command("list")
 @click.option("--project", default="openstack/ironic", help="OpenStack project")
 @click.option("--pipeline", default=None, help="Filter by pipeline (e.g. gate, check)")
-def list_jobs(project, pipeline):
+@click.option("--branch", default=None, help="Filter by branch (e.g. master)")
+def list_jobs(project, pipeline, branch):
     """List available Zuul jobs for a project."""
     from stackbox.zuul.api import ZuulClient
 
@@ -493,7 +515,7 @@ def list_jobs(project, pipeline):
 
     with console.status(f"Fetching jobs for [bold]{project}[/bold]..."):
         client = ZuulClient()
-        jobs = client.list_jobs(project, pipeline=pipeline)
+        jobs = client.list_jobs(project, pipeline=pipeline, branch=branch)
 
     if not jobs:
         console.print(f"No jobs found for {project}")
@@ -502,11 +524,12 @@ def list_jobs(project, pipeline):
     table = Table(title=f"Zuul Jobs — {project}")
     table.add_column("Job Name", style="cyan")
     table.add_column("Pipeline")
+    table.add_column("Branch")
     table.add_column("Voting")
 
     seen = set()
     for job in jobs:
-        key = (job["name"], job["pipeline"])
+        key = (job["name"], job["pipeline"], job.get("branch", ""))
         if key in seen:
             continue
         seen.add(key)
@@ -514,6 +537,7 @@ def list_jobs(project, pipeline):
         table.add_row(
             job["name"],
             job["pipeline"],
+            job.get("branch", ""),
             f"[{voting_style}]{'yes' if job['voting'] else 'no'}[/{voting_style}]",
         )
 
@@ -641,11 +665,14 @@ def clean(session, remove_all, force):
     if session:
         session_dir = SESSIONS_DIR / session
     else:
-        sessions = sorted(SESSIONS_DIR.iterdir()) if SESSIONS_DIR.exists() else []
+        sessions = list(SESSIONS_DIR.iterdir()) if SESSIONS_DIR.exists() else []
         if not sessions:
             console.print("No sessions found")
             return
-        session_dir = sessions[-1]
+        # Pick the most recently modified session, not the alphabetically last
+        # one — session IDs are random hex, so sorted()[-1] would land on a
+        # stale session and leave the live stack (and its volumes) untouched.
+        session_dir = max(sessions, key=lambda p: p.stat().st_mtime)
 
     try:
         manifest = SessionManifest.load(session_dir)
@@ -661,6 +688,17 @@ def clean(session, remove_all, force):
                     backend.stop(name)
                 backend.remove(name, force=True)
                 console.print(f"  Removed container {name}")
+        if remove_all:
+            # No manifest means we don't know which volumes belong to the
+            # session, but stackbox volumes are statically named, so remove
+            # everything under the shared prefix (containers are gone above).
+            for vol in backend.list_volumes(prefix="stackbox-"):
+                if backend.remove_volume(vol):
+                    console.print(f"  Removed volume {vol}")
+                else:
+                    console.print(f"  [yellow]Could not remove volume {vol}[/yellow]")
+        shutil.rmtree(session_dir, ignore_errors=True)
+        _prune_stale_sessions(backend, console)
         return
 
     with console.status("Cleaning up..."):
@@ -668,11 +706,25 @@ def clean(session, remove_all, force):
             ovs_running = backend.is_running("stackbox-openvswitch-db-server")
             if ovs_running:
                 for bridge in manifest.ovs_bridges:
-                    backend.exec(
-                        "stackbox-openvswitch-db-server",
-                        ["ovs-vsctl", "--if-exists", "del-br", bridge],
-                    )
-                    console.print(f"  Removed bridge {bridge}")
+                    # --no-wait / --timeout so a dead vswitchd can't make
+                    # ovs-vsctl block forever and abort the whole teardown;
+                    # the container is force-removed below regardless.
+                    try:
+                        rc, _ = backend.exec(
+                            "stackbox-openvswitch-db-server",
+                            ["ovs-vsctl", "--no-wait", "--timeout=5",
+                             "--if-exists", "del-br", bridge],
+                            timeout=15,
+                        )
+                    except Exception:
+                        rc = 1
+                    if rc == 0:
+                        console.print(f"  Removed bridge {bridge}")
+                    else:
+                        console.print(
+                            f"  [yellow]Could not remove bridge {bridge} "
+                            f"(OVS unresponsive); continuing[/yellow]"
+                        )
             else:
                 console.print("[yellow]OVS container was not running, bridges may persist[/yellow]")
 
@@ -689,9 +741,40 @@ def clean(session, remove_all, force):
             console.print(f"  Removed VM {domain}")
 
         if remove_all:
-            for vol in manifest.volumes:
-                backend.remove_volume(vol)
-                console.print(f"  Removed volume {vol}")
+            # Manifest volumes first, then sweep any remaining stackbox-
+            # prefixed volumes: some (e.g. ironic-httpboot/tftpboot) are not
+            # recorded in the manifest and would otherwise leak across runs.
+            swept = dict.fromkeys(manifest.volumes)
+            swept.update(dict.fromkeys(backend.list_volumes(prefix="stackbox-")))
+            for vol in swept:
+                if backend.remove_volume(vol):
+                    console.print(f"  Removed volume {vol}")
+                else:
+                    console.print(f"  [yellow]Could not remove volume {vol}[/yellow]")
 
     shutil.rmtree(session_dir, ignore_errors=True)
     console.print(f"[green]Session {manifest.session_id} cleaned up[/green]")
+
+    _prune_stale_sessions(backend, console)
+
+
+def _prune_stale_sessions(backend, console) -> None:
+    """Remove leftover session dirs once no stackbox containers remain.
+
+    stackbox runs a single stack with statically-named containers/volumes, so
+    once the stack is torn down every session directory is stale metadata.
+    """
+    import shutil
+
+    if not SESSIONS_DIR.exists():
+        return
+    if backend.list_containers(prefix="stackbox-"):
+        return  # a stack is still up; keep session metadata
+
+    pruned = 0
+    for d in SESSIONS_DIR.iterdir():
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+            pruned += 1
+    if pruned:
+        console.print(f"[green]Pruned {pruned} stale session dir(s)[/green]")

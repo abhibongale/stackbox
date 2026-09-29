@@ -18,16 +18,20 @@ class NeutronAgentConfigGenerator(ServiceConfigGenerator):
             "external_network_bridge": "",
         }
 
-        tenant_type = lr.get("Q_ML2_TENANT_NETWORK_TYPE", "vxlan")
-
         ovs_agent = ConfigParser()
         ovs_agent.optionxform = str
+        # Single-host flat networking: no overlay tunnels. STACKBOX provisions a
+        # flat provider network (physnet1:brbm), so VXLAN is unnecessary. It was
+        # also actively harmful: configuring tunnel_types=vxlan with a loopback
+        # local_ip=127.0.0.1 made the agent build a br-tun that flapped rapidly
+        # ("ioctl(SIOCSIFHWADDR) on br-tun failed: No such device") and segfaulted
+        # ovs-vswitchd, taking down the entire dataplane and wedging deploys in
+        # "clean wait" (no DHCP -> no PXE boot). Empty tunnel_types skips br-tun.
         ovs_agent["ovs"] = {
             "bridge_mappings": bridge_mappings,
-            "local_ip": "127.0.0.1",
         }
         ovs_agent["agent"] = {
-            "tunnel_types": tenant_type,
+            "tunnel_types": "",
         }
         ovs_agent["securitygroup"] = {
             "firewall_driver": "noop",

@@ -6,7 +6,7 @@ import logging
 from stackbox.config_gen.ports import PortManager
 from stackbox.containers.backend import ContainerBackend
 from stackbox.containers.manifest import SessionManifest
-from stackbox.exceptions import BootstrapError
+from stackbox.exceptions import BootstrapError, ContainerError
 from stackbox.models.network import NetworkConfig
 
 log = logging.getLogger(__name__)
@@ -85,11 +85,15 @@ def _ensure_iptables(backend: ContainerBackend) -> bool:
         return True
 
     log.info("Installing iptables in %s", OVS_CONTAINER)
-    ec, out = backend.exec(
-        OVS_CONTAINER,
-        ["bash", "-c", "apt-get update -qq && apt-get install -y -qq iptables"],
-        timeout=60,
-    )
+    try:
+        ec, out = backend.exec(
+            OVS_CONTAINER,
+            ["bash", "-c", "apt-get update -qq && apt-get install -y -qq iptables"],
+            timeout=180,
+        )
+    except ContainerError as exc:
+        log.warning("Failed to install iptables in %s: %s", OVS_CONTAINER, exc)
+        return False
     if ec != 0:
         log.warning("Failed to install iptables in %s: %s", OVS_CONTAINER, out.strip())
         return False

@@ -56,6 +56,19 @@ class TestDevStackTranslator:
         }
         assert translator.unmapped_keys(localrc) == set()
 
+    def test_empty_string_values_are_skipped(self):
+        # In devstack, empty string means "unset — use the service default".
+        # Writing it to a config file causes Ironic to look up an interface
+        # named "" and crash (e.g. ironic-tempest-functional-python3 sets
+        # IRONIC_DEFAULT_DEPLOY_INTERFACE="").
+        translator = DevStackTranslator()
+        result = translator.translate({
+            "IRONIC_DEFAULT_DEPLOY_INTERFACE": "",
+            "IRONIC_ENABLED_HARDWARE_TYPES": "redfish",
+        })
+        assert "default_deploy_interface" not in result.get("ironic", {}).get("DEFAULT", {})
+        assert result["ironic"]["DEFAULT"]["enabled_hardware_types"] == "redfish"
+
     def test_translate_from_fixture(self, vmedia_job_config):
         translator = DevStackTranslator()
         result = translator.translate(vmedia_job_config.devstack_localrc)

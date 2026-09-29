@@ -1,3 +1,4 @@
+import signal
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -35,6 +36,23 @@ class TestDockerBackend:
             backend.run(spec)
             cmd = mock_run.call_args[0][0]
             assert "--privileged" in cmd
+
+    def test_run_restart_policy(self, backend):
+        spec = ContainerSpec(name="ovs", image="img:1", restart_policy="on-failure:5")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="id\n", stderr="")
+            backend.run(spec)
+            cmd = mock_run.call_args[0][0]
+            assert "--restart" in cmd
+            assert cmd[cmd.index("--restart") + 1] == "on-failure:5"
+
+    def test_run_no_restart_policy_by_default(self, backend):
+        spec = ContainerSpec(name="plain", image="img:1")
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="id\n", stderr="")
+            backend.run(spec)
+            cmd = mock_run.call_args[0][0]
+            assert "--restart" not in cmd
 
     def test_run_volumes(self, backend):
         spec = ContainerSpec(
@@ -149,3 +167,126 @@ class TestDockerBackend:
             backend.create_volume("testvol")
             mock_run.assert_called_once()
             assert mock_run.call_args[0][0] == ["docker", "volume", "inspect", "testvol"]
+
+    def test_list_volumes_with_prefix(self, backend):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="stackbox-mariadb-data\nstackbox-ovs-run\n", stderr=""
+            )
+            vols = backend.list_volumes(prefix="stackbox-")
+            assert vols == ["stackbox-mariadb-data", "stackbox-ovs-run"]
+            assert mock_run.call_args[0][0] == [
+                "docker", "volume", "ls", "--format", "{{.Name}}",
+                "--filter", "name=stackbox-",
+            ]
+
+    def test_remove_volume_success(self, backend):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            assert backend.remove_volume("testvol") is True
+            assert mock_run.call_args[0][0] == ["docker", "volume", "rm", "-f", "testvol"]
+
+    def test_remove_volume_in_use_returns_false(self, backend):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=1, stdout="", stderr="volume is in use"
+            )
+            assert backend.remove_volume("testvol") is False
+
+    def test_build_image_success(self, backend):
+        with patch.object(backend, "_run_build_cmd") as mock_build:
+            mock_build.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            backend.build_image(
+                tag="img:local", context=".", containerfile="Containerfile",
+                build_args={"SERVICE_NAME": "ironic-api"},
+            )
+            mock_build.assert_called_once()
+            cmd = mock_build.call_args[0][0]
+            assert cmd[:3] == ["docker", "build", "-t"]
+            assert "--build-arg" in cmd
+            assert "SERVICE_NAME=ironic-api" in cmd
+
+    def test_build_image_retries_on_locked_ref(self, backend):
+        locked = MagicMock(
+            returncode=1, stdout="",
+            stderr="ref moby/1/abc locked for 34s: unavailable",
+        )
+        ok = MagicMock(returncode=0, stdout="", stderr="")
+        with patch.object(backend, "_run_build_cmd", side_effect=[locked, ok]) as m, \
+                patch("stackbox.containers.docker.time.sleep") as mock_sleep:
+            backend.build_image(tag="img:local", context=".", containerfile="Cf")
+            assert m.call_count == 2
+            mock_sleep.assert_called_once()
+
+    def test_build_image_raises_after_exhausting_retries(self, backend):
+        locked = MagicMock(
+            returncode=1, stdout="",
+            stderr="ref moby/1/abc locked for 34s: unavailable",
+        )
+        with patch.object(backend, "_run_build_cmd", return_value=locked) as m, \
+                patch("stackbox.containers.docker.time.sleep"):
+            with pytest.raises(ContainerError):
+                backend.build_image(tag="img:local", context=".", containerfile="Cf")
+            assert m.call_count == 3
+
+    CORRUPT_STDERR = (
+        'runc run failed: unable to start container process: error '
+        'during container init: exec: "/bin/sh": stat /bin/sh: '
+        "no such file or directory"
+    )
+
+    def test_build_image_self_heals_on_transient_corruption(self, backend):
+        corrupt = MagicMock(returncode=1, stdout="", stderr=self.CORRUPT_STDERR)
+        ok = MagicMock(returncode=0, stdout="", stderr="")
+        with patch.object(backend, "_run_build_cmd", side_effect=[corrupt, ok]) as m, \
+                patch("stackbox.containers.docker.time.sleep"):
+            backend.build_image(tag="img:local", context=".", containerfile="Cf")
+            assert m.call_count == 2
+            # The retry busts the cache so it doesn't remount the poisoned layer.
+            assert "--no-cache" in m.call_args_list[1][0][0]
+
+    def test_build_image_raises_fix_hint_when_corruption_persists(self, backend):
+        corrupt = MagicMock(returncode=1, stdout="", stderr=self.CORRUPT_STDERR)
+        with patch.object(backend, "_run_build_cmd", return_value=corrupt) as m, \
+                patch("stackbox.containers.docker.time.sleep"):
+            with pytest.raises(ContainerError, match="containerd-snapshotter"):
+                backend.build_image(tag="img:local", context=".", containerfile="Cf")
+            assert m.call_count == 3
+
+    def test_build_image_does_not_retry_other_errors(self, backend):
+        failed = MagicMock(
+            returncode=1, stdout="", stderr="Containerfile syntax error",
+        )
+        with patch.object(backend, "_run_build_cmd", return_value=failed) as m:
+            with pytest.raises(ContainerError):
+                backend.build_image(tag="img:local", context=".", containerfile="Cf")
+            m.assert_called_once()
+
+    def test_cancel_build_sigint_releases_cleanly(self, backend):
+        proc = MagicMock()
+        proc.communicate.return_value = ("", "cancelled")
+        out, err = backend._cancel_build(proc)
+        proc.send_signal.assert_called_once_with(signal.SIGINT)
+        assert err == "cancelled"
+
+    def test_cancel_build_escalates_to_kill(self, backend):
+        proc = MagicMock()
+        proc.communicate.side_effect = [
+            subprocess.TimeoutExpired(cmd="docker", timeout=15),
+            subprocess.TimeoutExpired(cmd="docker", timeout=15),
+            ("", ""),
+        ]
+        backend._cancel_build(proc)
+        sent = [c.args[0] for c in proc.send_signal.call_args_list]
+        assert sent == [signal.SIGINT, signal.SIGTERM, signal.SIGKILL]
+
+    def test_run_build_cmd_cancels_on_timeout(self, backend):
+        proc = MagicMock()
+        proc.communicate.side_effect = subprocess.TimeoutExpired(
+            cmd="docker", timeout=1800
+        )
+        with patch("subprocess.Popen", return_value=proc), \
+                patch.object(backend, "_cancel_build", return_value=("", "x")) as cancel:
+            with pytest.raises(ContainerError, match="timed out"):
+                backend._run_build_cmd(["docker", "build", "."], timeout=1800)
+            cancel.assert_called_once_with(proc)

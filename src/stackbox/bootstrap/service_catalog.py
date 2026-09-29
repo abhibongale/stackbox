@@ -11,12 +11,16 @@ log = logging.getLogger(__name__)
 
 CONTAINER = "stackbox-keystone"
 
+# (name, service type, port key, devstack_services toggle). A toggle of None
+# means the service is always registered (ironic is the reason stackbox exists).
+# Any other toggle is honored only when explicitly False, so jobs that disable
+# nova/glance/placement don't get dead endpoints in the catalog.
 CORE_SERVICES = [
-    ("nova", "compute", "nova-api"),
-    ("glance", "image", "glance"),
-    ("neutron", "network", "neutron"),
-    ("placement", "placement", "placement"),
-    ("ironic", "baremetal", "ironic-api"),
+    ("nova", "compute", "nova-api", "n-api"),
+    ("glance", "image", "glance", "g-api"),
+    ("neutron", "network", "neutron", "q-svc"),
+    ("placement", "placement", "placement", "placement-api"),
+    ("ironic", "baremetal", "ironic-api", None),
 ]
 
 CONDITIONAL_SERVICES = {
@@ -54,7 +58,11 @@ def register_services(
     ks_port = port_manager.get("keystone")
     env = _os_env(admin_pass, ks_port)
 
-    services = list(CORE_SERVICES)
+    services = [
+        (name, svc_type, port_key)
+        for name, svc_type, port_key, toggle in CORE_SERVICES
+        if toggle is None or job.devstack_services.get(toggle, True)
+    ]
     for ds_key, svc_info in CONDITIONAL_SERVICES.items():
         if job.devstack_services.get(ds_key, False):
             services.append(svc_info)
