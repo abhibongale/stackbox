@@ -98,6 +98,19 @@ class TestRequiredContainers:
             sources = [v.source for v in spec.volumes]
             assert "stackbox-ironic-shared" in sources, f"{name} missing shared volume"
 
+    def test_pxe_creates_tftpboot_before_serving(self, tmp_path):
+        # tftpboot/ does not exist on a fresh shared volume until the conductor
+        # creates it. in.tftpd's -s root must exist at exec time or it exits 66
+        # and never retries, so the pxe command must mkdir it first.
+        job = ResolvedJobConfig(job_name="pxe-test", boot_interface="pxe")
+        pm = PortManager()
+        specs = build_container_specs(job, tmp_path, pm, "2025.1-ubuntu-noble")
+        pxe = next(s for s in specs if s.name == "stackbox-ironic-pxe")
+        cmd = " ".join(pxe.command)
+        assert "mkdir -p /var/lib/ironic/tftpboot" in cmd
+        assert cmd.index("mkdir") < cmd.index("in.tftpd")
+        assert "in.tftpd" in cmd
+
     def test_ipmi_has_vbmc(self):
         job = ResolvedJobConfig(job_name="ipmi-test", bmc_driver="ipmi")
         needed = required_containers(job)
@@ -302,7 +315,10 @@ class TestBuildContainerSpecs:
         specs = build_container_specs(vmedia_job, tmp_path, pm, "2025.1-ubuntu-noble")
         kolla_config_target = "/var/lib/kolla/config_files/config.json"
         for spec in specs:
-            if any(s in spec.name for s in ("sushy-tools", "vbmc", "ironic-http")):
+            # ironic-http and ironic-pxe override the container command directly
+            # (to mkdir the shared-volume boot dirs before serving) instead of
+            # going through the kolla config command, so they carry no config.json.
+            if any(s in spec.name for s in ("sushy-tools", "vbmc", "ironic-http", "ironic-pxe")):
                 continue
             vol_targets = [v.target for v in spec.volumes]
             assert kolla_config_target in vol_targets, (

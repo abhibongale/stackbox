@@ -559,9 +559,18 @@ def build_container_specs(
         specs.append(ContainerSpec(
             name=_name("ironic-pxe"),
             image=_image_for("ironic-pxe", release, image_overrides),
+            # The shared volume mounts at /var/lib/ironic, so tftpboot/ does not
+            # exist until the conductor (or ironic-http) first creates it. If
+            # ironic-pxe wins that race, in.tftpd's -s root is missing and it
+            # exits 66 (EX_NOINPUT) without retrying, leaving PXE dead. Create
+            # the dir first, mirroring ironic-http. kolla_start execs its command
+            # unquoted (word-split), so the guard can't live in the kolla config
+            # command; override the container command directly instead.
+            command=["sh", "-c",
+                     "mkdir -p /var/lib/ironic/tftpboot && "
+                     f"exec {KOLLA_SERVICE_COMMANDS['ironic-pxe']}"],
             volumes=[
                 _shared_vol("stackbox-ironic-shared"),
-                _kolla_config_vol(configs_dir, "ironic-pxe", KOLLA_SERVICE_COMMANDS["ironic-pxe"]),
             ],
         ))
 
