@@ -349,3 +349,61 @@ class TestBuildContainerSpecs:
         data = json.loads(pl_json.read_text())
         assert "uwsgi" in data["command"]
         assert str(pm.get("placement")) in data["command"]
+
+
+class TestGraphicalConsoleSpecs:
+    """ir-novnc jobs (e.g. ironic-tempest-vnc-container)."""
+
+    LOCAL = {"ironic-api": "stackbox-ironic-api:local",
+             "ironic-conductor": "stackbox-ironic-conductor:local"}
+
+    @staticmethod
+    def _job(provider=None, novnc=True):
+        localrc = {"IRONIC_VNC_CONTAINER_PROVIDER": provider} if provider else {}
+        return ResolvedJobConfig(
+            job_name="vnc", devstack_services={"ir-novnc": novnc},
+            devstack_localrc=localrc,
+        )
+
+    def _specs(self, job, tmp_path, overrides=LOCAL):
+        specs = build_container_specs(
+            job, tmp_path, PortManager(), "2025.1-ubuntu-noble", image_overrides=overrides)
+        return {s.name: s for s in specs}
+
+    def test_container_provider_gets_engine_socket(self, tmp_path):
+        specs = self._specs(self._job("container"), tmp_path)
+        conductor = specs["stackbox-ironic-conductor"]
+        sock = next(v for v in conductor.volumes if v.target == "/var/run/docker.sock")
+        # relabeling the host docker.sock would be harmful; confinement is off instead
+        assert sock.options == ""
+        assert "label=disable" in conductor.security_opts
+
+    def test_novncproxy_uses_local_conductor_image(self, tmp_path):
+        specs = self._specs(self._job("container"), tmp_path)
+        proxy = specs["stackbox-ironic-novncproxy"]
+        assert proxy.image == "stackbox-ironic-conductor:local"
+        assert proxy.command[0] == "ironic-novncproxy"
+        assert proxy.health_check.target == "6090"
+
+    def test_fake_provider_has_proxy_but_no_socket(self, tmp_path):
+        specs = self._specs(self._job("fake"), tmp_path)
+        assert "stackbox-ironic-novncproxy" in specs
+        conductor = specs["stackbox-ironic-conductor"]
+        assert all(v.target != "/var/run/docker.sock" for v in conductor.volumes)
+        assert conductor.security_opts == []
+
+    def test_kolla_images_skip_proxy(self, tmp_path, caplog):
+        specs = self._specs(self._job("container"), tmp_path, overrides=None)
+        assert "stackbox-ironic-novncproxy" not in specs
+        assert "--local-repo ironic-conductor" in caplog.text
+
+    @pytest.mark.parametrize("novnc", [False, None])
+    def test_non_vnc_jobs_unchanged(self, tmp_path, novnc):
+        job = (ResolvedJobConfig(job_name="plain") if novnc is None
+               else self._job("container", novnc=False))
+        assert "ironic-novncproxy" not in required_containers(job)
+        specs = self._specs(job, tmp_path)
+        assert "stackbox-ironic-novncproxy" not in specs
+        conductor = specs["stackbox-ironic-conductor"]
+        assert all(v.target != "/var/run/docker.sock" for v in conductor.volumes)
+        assert conductor.security_opts == []

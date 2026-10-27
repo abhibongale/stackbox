@@ -14,9 +14,12 @@ from stackbox.bootstrap.network_setup import create_networks, setup_ovs_bridges
 from stackbox.bootstrap.resources import setup_resources
 from stackbox.bootstrap.service_catalog import register_services
 from stackbox.bootstrap.services import start_services
+from stackbox.config import REPO_CACHE_DIR
 from stackbox.config_gen.ports import PortManager
+from stackbox.config_gen.vnc import vnc_settings
 from stackbox.containers.backend import ContainerBackend
 from stackbox.containers.health import check
+from stackbox.containers.images import ImageManager
 from stackbox.containers.manifest import SessionManifest
 from stackbox.containers.specs import SHARED_VOLUMES, build_container_specs
 from stackbox.exceptions import BootstrapError
@@ -24,6 +27,7 @@ from stackbox.models.baremetal import BMCType
 from stackbox.models.container import ContainerSpec
 from stackbox.models.job_config import ResolvedJobConfig
 from stackbox.models.network import NetworkConfig
+from stackbox.zuul.repo_cache import RepoCache
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +99,11 @@ class BootstrapOrchestrator:
             )),
             ("Register service catalog", lambda: register_services(self.backend, self.job, self.port_manager, self.admin_pass)),
             ("Database sync", self._run_dbsync_phase),
+        ]
+        vnc = vnc_settings(self.job)
+        if vnc and vnc.needs_engine:
+            phases.append(("Build VNC console image", self._build_vnc_console_image))
+        phases += [
             ("Start services", lambda: start_services(
                 self.backend, self.job, self.specs, self.manifest,
                 after_ovs=lambda: setup_ovs_bridges(self.backend, self.manifest),
@@ -114,6 +123,18 @@ class BootstrapOrchestrator:
         self.manifest.save(Path(self.manifest.configs_dir).parent)
         total = time.monotonic() - total_start
         log.info("Bootstrap complete in %.1fs", total)
+
+    def _build_vnc_console_image(self) -> None:
+        # The conductor starts consoles from this image; build it from the
+        # ironic tree under test so tools/vnc-container changes are exercised.
+        source = (
+            self.job.local_repos.get("ironic-conductor")
+            or self.job.local_repos.get("ironic-api")
+        )
+        if not source:
+            source = str(RepoCache(REPO_CACHE_DIR).ensure_repo(
+                "openstack/ironic", branch=self.job.branch))
+        ImageManager(self.backend, self.release).build_vnc_console(source)
 
     def _create_volumes(self) -> None:
         for vol_name in SHARED_VOLUMES:

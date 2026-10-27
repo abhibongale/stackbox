@@ -3,6 +3,7 @@ from __future__ import annotations
 from configparser import ConfigParser
 
 from stackbox.config_gen.base import ServiceConfigGenerator
+from stackbox.config_gen.vnc import enabled_console_interfaces
 
 
 class TempestConfigGenerator(ServiceConfigGenerator):
@@ -44,6 +45,9 @@ class TempestConfigGenerator(ServiceConfigGenerator):
             "endpoint_type": "internal",
             "min_microversion": "1.1",
             "max_microversion": "latest",
+            # Devstack always writes this (lib/ironic); TestGraphicalConsole
+            # skips unless fake-graphical is listed. Same list as ironic.conf.
+            "enabled_console_interfaces": enabled_console_interfaces(self.job),
         }
         # These refs are resolved from glance/nova at bootstrap; only emit them
         # when those services exist, otherwise the placeholders never resolve and

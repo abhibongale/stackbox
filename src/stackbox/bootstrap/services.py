@@ -30,6 +30,7 @@ START_ORDER = [
     ["sushy-tools", "vbmc"],
     ["ironic-pxe"],
     ["ironic-api", "ironic-conductor", "ironic-http"],
+    ["ironic-novncproxy"],
     ["nova-compute"],
 ]
 

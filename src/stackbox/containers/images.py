@@ -63,6 +63,30 @@ class ImageManager:
             overrides[service] = tag
         return overrides
 
+    def build_vnc_console(self, ironic_source: str) -> str:
+        """Build ironic's graphical console image, as devstack does."""
+        from stackbox.config_gen.vnc import VNC_CONSOLE_IMAGE
+        from stackbox.exceptions import ImageBuildError
+
+        context = Path(ironic_source) / "tools" / "vnc-container"
+        containerfile = context / "Containerfile.ubuntu"
+        if not containerfile.is_file():
+            raise ImageBuildError(
+                f"No VNC console Containerfile at {containerfile}; this ironic "
+                f"tree predates graphical console support")
+        log.info("Building VNC console image from %s", context)
+        try:
+            self.backend.build_image(
+                tag=VNC_CONSOLE_IMAGE,
+                context=str(context),
+                containerfile=str(containerfile),
+            )
+        except Exception as exc:
+            raise ImageBuildError(
+                f"Failed to build {VNC_CONSOLE_IMAGE} from {context}: {exc}"
+            ) from exc
+        return VNC_CONSOLE_IMAGE
+
     def build_tempest(
         self,
         context: str,

@@ -1,3 +1,7 @@
+# Static docker CLI for ironic's "container" graphical-console provider, which
+# drives the host engine through a mounted socket (see containers/specs.py).
+FROM docker.io/library/docker:cli AS docker-cli
+
 FROM docker.io/library/ubuntu:24.04
 ARG SERVICE_NAME
 ENV DEBIAN_FRONTEND=noninteractive
@@ -6,7 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv python3-dev \
     gcc git libffi-dev libssl-dev libpq-dev \
     ipmitool qemu-utils genisoimage \
-    grub-efi-amd64-bin dosfstools mtools && \
+    grub-efi-amd64-bin dosfstools mtools \
+    novnc && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN printf 'search --no-floppy --set=root --file /EFI/BOOT/grub.cfg\nconfigfile /EFI/BOOT/grub.cfg\n' > /tmp/grub-embed.cfg && \
@@ -22,6 +27,8 @@ RUN printf 'search --no-floppy --set=root --file /EFI/BOOT/grub.cfg\nconfigfile 
     mmd -i /opt/stackbox/efiboot.img ::efi ::efi/boot && \
     mcopy -i /opt/stackbox/efiboot.img /tmp/bootx64.efi ::efi/boot/bootx64.efi && \
     rm -f /tmp/grub-embed.cfg /tmp/bootx64.efi
+
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 
 RUN python3 -m venv /opt/stackbox/venv
 ENV PATH="/opt/stackbox/venv/bin:$PATH"

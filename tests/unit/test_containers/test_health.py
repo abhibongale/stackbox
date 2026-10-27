@@ -103,3 +103,40 @@ class TestAssertContainersAlive:
         with pytest.raises(BootstrapError, match="exited"):
             assert_containers_alive(backend, ["stackbox-openvswitch-vswitchd"])
         backend.logs.assert_called_once()
+
+
+class TestConductorHealthCheck:
+    @staticmethod
+    def _spec(timeout):
+        return ContainerSpec(
+            name="stackbox-ironic-conductor", image="img:1",
+            health_check=HealthCheck(type="ironic-conductor", target="online",
+                                     timeout_seconds=timeout, interval_seconds=0),
+        )
+
+    def test_passes_once_registered(self):
+        backend = MagicMock()
+        backend.exec.return_value = (0, "")
+        check(backend, self._spec(timeout=5))
+        cmd = backend.exec.call_args.args[1]
+        assert cmd[:2] == ["python3", "-c"]
+        assert "conductors WHERE online = 1" in cmd[2]
+
+    def test_timeout_includes_conductor_logs(self):
+        # e.g. a DriverLoadError crash-loop: container "Up", never registers.
+        backend = MagicMock()
+        backend.exec.return_value = (1, "")
+        backend.logs.return_value = "DriverLoadError: fake-hardware could not be loaded"
+        with pytest.raises(BootstrapError, match="(?s)Timed out.*DriverLoadError") as exc_info:
+            check(backend, self._spec(timeout=0))
+        # the probe script is an implementation detail; keep it out of the error
+        assert "pymysql" not in str(exc_info.value)
+        assert "register online" in str(exc_info.value)
+        backend.logs.assert_called_once_with("stackbox-ironic-conductor", tail=40)
+
+    def test_logs_failure_keeps_original_error(self):
+        backend = MagicMock()
+        backend.exec.return_value = (1, "")
+        backend.logs.side_effect = RuntimeError("gone")
+        with pytest.raises(BootstrapError, match="Timed out"):
+            check(backend, self._spec(timeout=0))

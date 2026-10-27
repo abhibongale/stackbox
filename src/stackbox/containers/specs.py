@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shlex
 from pathlib import Path
 
 from stackbox.config_gen.ports import PortManager
+from stackbox.config_gen.vnc import VncSettings, vnc_enabled, vnc_settings
 from stackbox.baremetal.libvirt import LIBVIRT_RUN_DIR, VMEDIA_DIR, default_image_dir
 from stackbox.constants import (
     CONTAINER_PREFIX, KOLLA_IMAGES, KOLLA_REGISTRY, KOLLA_RELEASE_OVERRIDES,
@@ -13,6 +15,8 @@ from stackbox.constants import (
 )
 from stackbox.models.container import ContainerSpec, HealthCheck, VolumeMount
 from stackbox.models.job_config import ResolvedJobConfig
+
+log = logging.getLogger(__name__)
 
 SHARED_VOLUMES = {
     "stackbox-mariadb-data": "/var/lib/mysql/",
@@ -146,6 +150,10 @@ def required_containers(job: ResolvedJobConfig) -> set[str]:
     if job.devstack_services.get("c-api", False):
         containers.update({"cinder-api", "cinder-scheduler", "cinder-volume", "tgtd"})
 
+    # ir-novnc: ironic's noVNC proxy, alongside the conductor it serves.
+    if vnc_enabled(job) and "ironic-conductor" in containers:
+        containers.add("ironic-novncproxy")
+
     if job.boot_interface in ("pxe", "ipxe"):
         # DHCP is served by Neutron's dnsmasq (neutron-dhcp-agent, always
         # present) for both PXE and virtual-media boot. Ironic injects the PXE
@@ -158,6 +166,52 @@ def required_containers(job: ResolvedJobConfig) -> set[str]:
     return containers
 
 
+# The host engine's API socket. The "container" console provider runs the
+# engine CLI inside the conductor, so consoles start as sibling containers on
+# the host and publish their VNC port there (reachable: host networking).
+DOCKER_SOCKET = "/var/run/docker.sock"
+
+
+def _add_engine_access(
+    conductor: ContainerSpec, image_overrides: dict[str, str] | None,
+) -> None:
+    # Never relabel the socket (":z" would change the host's docker.sock
+    # SELinux label); disable confinement for this container instead.
+    conductor.volumes.append(_vol(DOCKER_SOCKET, DOCKER_SOCKET, ""))
+    conductor.security_opts.append("label=disable")
+    if not (image_overrides and "ironic-conductor" in image_overrides):
+        log.warning(
+            "Graphical console via the 'container' provider needs the docker "
+            "CLI in ironic-conductor; Kolla images lack it (and run as a "
+            "non-root user). Use --local-repo ironic-conductor=<ironic src>.")
+
+
+def _novncproxy_spec(
+    configs_dir: Path,
+    port_manager: PortManager,
+    vnc: VncSettings,
+    image_overrides: dict[str, str] | None,
+) -> ContainerSpec | None:
+    # Kolla's ironic images ship no noVNC html/js, and ironic-novncproxy
+    # refuses to start without them; the local dev image installs them.
+    if not (image_overrides and "ironic-conductor" in image_overrides):
+        log.warning(
+            "Skipping ironic-novncproxy: Kolla ironic images have no noVNC "
+            "web files. Use --local-repo ironic-conductor=<ironic src>.")
+        return None
+    return ContainerSpec(
+        name=_name("ironic-novncproxy"),
+        image=image_overrides["ironic-conductor"],
+        command=shlex.split(KOLLA_SERVICE_COMMANDS["ironic-novncproxy"]),
+        volumes=[
+            _config_vol(configs_dir, "ironic.conf", "/etc/ironic/ironic.conf"),
+        ],
+        health_check=HealthCheck(
+            type="tcp", target=str(vnc.port), timeout_seconds=60,
+        ),
+    )
+
+
 def build_container_specs(
     job: ResolvedJobConfig,
     configs_dir: Path,
@@ -167,6 +221,7 @@ def build_container_specs(
 ) -> list[ContainerSpec]:
     specs: list[ContainerSpec] = []
     needed = required_containers(job)
+    vnc = vnc_settings(job)
 
     if "mariadb" in needed:
         specs.append(ContainerSpec(
@@ -375,7 +430,7 @@ def build_container_specs(
         ))
 
     if "ironic-conductor" in needed:
-        specs.append(ContainerSpec(
+        conductor = ContainerSpec(
             name=_name("ironic-conductor"),
             image=_image_for("ironic-conductor", release, image_overrides),
             volumes=[
@@ -383,7 +438,15 @@ def build_container_specs(
                 _shared_vol("stackbox-ironic-shared"),
                 _kolla_config_vol(configs_dir, "ironic-conductor", KOLLA_SERVICE_COMMANDS["ironic-conductor"]),
             ],
-        ))
+            # Registered online == all enabled drivers loaded; otherwise the API
+            # answers 503 for anything that needs a conductor.
+            health_check=HealthCheck(
+                type="ironic-conductor", target="online", timeout_seconds=120,
+            ),
+        )
+        if vnc and vnc.needs_engine:
+            _add_engine_access(conductor, image_overrides)
+        specs.append(conductor)
 
         http_port = port_manager.get("ironic-http")
         specs.append(ContainerSpec(
@@ -406,6 +469,11 @@ def build_container_specs(
                 timeout_seconds=30,
             ),
         ))
+
+    if "ironic-novncproxy" in needed:
+        proxy = _novncproxy_spec(configs_dir, port_manager, vnc, image_overrides)
+        if proxy:
+            specs.append(proxy)
 
     if "openvswitch-db-server" in needed:
         specs.append(ContainerSpec(

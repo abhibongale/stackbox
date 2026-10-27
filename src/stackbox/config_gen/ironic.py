@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import logging
+
 from stackbox.config_gen.base import ServiceConfigGenerator
 from stackbox.config_gen.translator import DevStackTranslator
+from stackbox.config_gen.vnc import (
+    VNC_CONSOLE_IMAGE, VncSettings, enabled_console_interfaces, vnc_settings,
+)
 from stackbox.models.network import NetworkConfig
+
+log = logging.getLogger(__name__)
 
 
 class IronicConfigGenerator(ServiceConfigGenerator):
@@ -189,6 +196,13 @@ class IronicConfigGenerator(ServiceConfigGenerator):
             current = config["DEFAULT"].get(key, no_op)
             config["DEFAULT"][key] = _add_if_missing(current, "fake")
 
+        # ir-novnc jobs also need fake-graphical for consoles. Taken from the
+        # helper shared with tempest.conf so both always advertise one list.
+        config["DEFAULT"]["enabled_console_interfaces"] = enabled_console_interfaces(self.job)
+        vnc = vnc_settings(self.job)
+        if vnc:
+            self._configure_vnc(config, vnc)
+
         # The autodetect deploy interface refuses to load unless every entry in
         # autodetect_deploy_interfaces is also enabled. Ironic's default for that
         # option includes 'ramdisk', which these jobs don't enable, so the
@@ -209,3 +223,29 @@ class IronicConfigGenerator(ServiceConfigGenerator):
             config["DEFAULT"]["autodetect_deploy_interfaces"] = autodetect_list
 
         return {"ironic.conf": self._render(config)}
+
+    def _configure_vnc(self, config, vnc: VncSettings) -> None:
+        """Mirror devstack's configure_ironic_novnc for ir-novnc jobs."""
+        config["DEFAULT"].setdefault(
+            "default_console_interface", vnc.default_console_interface)
+        if vnc.effective_provider != vnc.provider:
+            log.warning(
+                "[vnc]container_provider %r can't run under stackbox; using %r "
+                "(same console image, started via the host container engine)",
+                vnc.provider, vnc.effective_provider)
+        config["vnc"] = {
+            "enabled": "True",
+            "host_ip": "127.0.0.1",
+            "port": str(vnc.port),
+            "public_url": f"http://localhost:{vnc.port}/vnc_lite.html",
+            "novnc_web": "/usr/share/novnc",
+            "container_provider": vnc.effective_provider,
+            "console_image": VNC_CONSOLE_IMAGE,
+        }
+        if vnc.needs_engine:
+            # The conductor talks to the host's docker via its mounted socket
+            # (see containers/specs.py), so consoles are published on the host.
+            config["vnc"].update({
+                "container_executable": "docker",
+                "container_publish_port": "127.0.0.1::5900",
+            })

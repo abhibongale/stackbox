@@ -16,6 +16,7 @@ DEVSTACK_TO_SERVICE: dict[str, tuple[str, str, str] | None] = {
     "IRONIC_ENABLED_CONSOLE_INTERFACES": ("ironic", "DEFAULT", "enabled_console_interfaces"),
     "IRONIC_DEFAULT_BOOT_INTERFACE": ("ironic", "DEFAULT", "default_boot_interface"),
     "IRONIC_DEFAULT_DEPLOY_INTERFACE": ("ironic", "DEFAULT", "default_deploy_interface"),
+    "IRONIC_DEFAULT_CONSOLE_INTERFACE": ("ironic", "DEFAULT", "default_console_interface"),
     "IRONIC_DEPLOY_DRIVER": None,
     "IRONIC_AUTOMATED_CLEAN_ENABLED": ("ironic", "conductor", "automated_clean"),
     "IRONIC_CALLBACK_TIMEOUT": ("ironic", "conductor", "deploy_callback_timeout"),
@@ -37,6 +38,9 @@ DEVSTACK_TO_SERVICE: dict[str, tuple[str, str, str] | None] = {
     "IRONIC_GRUB2_FILE": None,
     "IRONIC_GRUB2_SHIM_FILE": None,
     "IRONIC_GRUB2_CONFIG_PATH": None,
+    # Graphical console — resolved by config_gen/vnc.py (only applies with ir-novnc)
+    "IRONIC_VNC_CONTAINER_PROVIDER": None,
+    "IRONIC_NOVNCPROXY_PORT": None,
 
     # Neutron
     "Q_AGENT": None,

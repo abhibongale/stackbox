@@ -138,3 +138,31 @@ class TestTempestRunner:
         mock_popen.return_value = mock_proc
 
         runner.run(conf, "test_baremetal", results)
+
+
+class TestAllSkippedDetection:
+
+    @staticmethod
+    def _run(runner, tmp_path, output):
+        conf = tmp_path / "tempest.conf"
+        conf.write_text("[DEFAULT]\n")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_proc = MagicMock()
+            mock_proc.stdout = iter(output.splitlines(keepends=True))
+            mock_proc.wait.return_value = 1
+            mock_popen.return_value = mock_proc
+            return runner.run(conf, "TestGraphicalConsole", tmp_path / "results")
+
+    def test_all_skipped(self, runner, tmp_path):
+        out = "Totals\n - Passed: 0\n - Skipped: 1\n - Failed: 0\n"
+        assert self._run(runner, tmp_path, out) == 1
+        assert runner.all_skipped
+
+    def test_real_failure_is_not_all_skipped(self, runner, tmp_path):
+        out = " - Passed: 0\n - Skipped: 1\n - Failed: 2\n"
+        self._run(runner, tmp_path, out)
+        assert not runner.all_skipped
+
+    def test_no_totals(self, runner, tmp_path):
+        self._run(runner, tmp_path, "docker: error\n")
+        assert not runner.all_skipped

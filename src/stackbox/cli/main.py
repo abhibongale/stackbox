@@ -32,6 +32,7 @@ def _print_dry_run(console, config, release, local_repos=None):
 
     from stackbox.config_gen import ConfigPipeline
     from stackbox.config_gen.ports import PortManager
+    from stackbox.config_gen.vnc import vnc_settings
     from stackbox.constants import BASE_PORTS
     from stackbox.containers.specs import SHARED_VOLUMES, build_container_specs, required_containers
 
@@ -42,7 +43,10 @@ def _print_dry_run(console, config, release, local_repos=None):
         tmp_path = Path(tmp)
         pipeline = ConfigPipeline()
         generated = pipeline.generate_all(config, tmp_path)
-        specs = build_container_specs(config, tmp_path, pm, release)
+        # Same tags build_local_repos produces, so the plan matches a real run.
+        overrides = {svc: f"stackbox-{svc}:local" for svc in (local_repos or {})}
+        specs = build_container_specs(
+            config, tmp_path, pm, release, image_overrides=overrides or None)
 
     console.print()
     console.print(Panel("[bold]STACKBOX Dry Run[/bold]", style="cyan"))
@@ -58,6 +62,14 @@ def _print_dry_run(console, config, release, local_repos=None):
     summary.add_row("Release", release)
     if config.tempest_test_regex:
         summary.add_row("Tempest regex", config.tempest_test_regex)
+    vnc = vnc_settings(config)
+    if vnc:
+        provider = vnc.effective_provider
+        if provider != vnc.provider:
+            provider += f" (job asked for {vnc.provider})"
+        summary.add_row(
+            "Graphical console",
+            f"{vnc.console_interfaces} via provider {provider}")
     console.print(summary)
     console.print()
 
@@ -364,6 +376,11 @@ def run(job_name, local_repo, port_offset, offline, dry_run, skip_tempest, keep,
                     console.print("[green]Tempest tests PASSED[/green]")
                 else:
                     console.print(f"[red]Tempest tests FAILED (exit {exit_code})[/red]")
+                    if runner.all_skipped:
+                        console.print(
+                            "[yellow]All selected tests were skipped — likely a config "
+                            "gap (check the skip reasons and enabled interfaces in "
+                            "tempest.conf)[/yellow]")
             elif skip_tempest:
                 console.print("[yellow]Tempest skipped (--skip-tempest)[/yellow]")
 
@@ -489,6 +506,11 @@ def reproduce(build_url, local_repo, port_offset, dry_run, skip_tempest, keep, r
                     console.print("[green]Tempest tests PASSED[/green]")
                 else:
                     console.print(f"[red]Tempest tests FAILED (exit {exit_code})[/red]")
+                    if runner.all_skipped:
+                        console.print(
+                            "[yellow]All selected tests were skipped — likely a config "
+                            "gap (check the skip reasons and enabled interfaces in "
+                            "tempest.conf)[/yellow]")
             elif skip_tempest:
                 console.print("[yellow]Tempest skipped (--skip-tempest)[/yellow]")
 
