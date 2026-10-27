@@ -50,20 +50,20 @@ def wait_exec(
     cmd: list[str],
     timeout: int = 60,
     interval: float = 2.0,
+    description: str | None = None,
 ) -> None:
+    what = description or f"exec '{' '.join(cmd)}'"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             exit_code, _ = backend.exec(container, cmd)
             if exit_code == 0:
-                log.info("Exec check passed in %s: %s", container, " ".join(cmd))
+                log.info("Exec check passed in %s: %s", container, what)
                 return
         except Exception:
             pass
         time.sleep(interval)
-    raise BootstrapError(
-        f"Timed out waiting for exec '{' '.join(cmd)}' in {container} after {timeout}s"
-    )
+    raise BootstrapError(f"Timed out waiting for {what} in {container} after {timeout}s")
 
 
 # Container states that mean the process is gone for good. "restarting" and
@@ -104,6 +104,27 @@ def assert_containers_alive(backend: ContainerBackend, names: list[str]) -> None
             )
 
 
+# ironic-conductor has no port to probe, and its container stays "Up" even when
+# every worker dies (cotyledon keeps respawning them, e.g. on a DriverLoadError).
+# It is only usable once it has registered itself online in the database, which
+# happens after all drivers loaded. Runs inside the conductor with its config.
+_CONDUCTOR_ONLINE_SCRIPT = """
+import configparser, sys, urllib.parse
+import pymysql
+conf = configparser.ConfigParser(interpolation=None)
+conf.read("/etc/ironic/ironic.conf")
+url = urllib.parse.urlparse(conf["database"]["connection"])
+db = pymysql.connect(
+    host=url.hostname, port=url.port or 3306,
+    user=urllib.parse.unquote(url.username),
+    password=urllib.parse.unquote(url.password or ""),
+    database=url.path.lstrip("/"))
+cur = db.cursor()
+cur.execute("SELECT COUNT(*) FROM conductors WHERE online = 1")
+sys.exit(0 if cur.fetchone()[0] else 1)
+"""
+
+
 def check(backend: ContainerBackend, spec: ContainerSpec) -> None:
     hc = spec.health_check
     if hc is None:
@@ -111,13 +132,32 @@ def check(backend: ContainerBackend, spec: ContainerSpec) -> None:
 
     if hc.type == "tcp":
         port = int(hc.target)
-        wait_tcp("localhost", port, timeout=hc.timeout_seconds, interval=hc.interval_seconds)
+        wait = lambda: wait_tcp(
+            "localhost", port, timeout=hc.timeout_seconds, interval=hc.interval_seconds)
     elif hc.type == "http":
-        wait_http(hc.target, timeout=hc.timeout_seconds, interval=hc.interval_seconds)
+        wait = lambda: wait_http(
+            hc.target, timeout=hc.timeout_seconds, interval=hc.interval_seconds)
     elif hc.type == "exec":
-        wait_exec(
+        wait = lambda: wait_exec(
             backend, spec.name, hc.target.split(),
             timeout=hc.timeout_seconds, interval=hc.interval_seconds,
         )
+    elif hc.type == "ironic-conductor":
+        wait = lambda: wait_exec(
+            backend, spec.name, ["python3", "-c", _CONDUCTOR_ONLINE_SCRIPT],
+            timeout=hc.timeout_seconds, interval=hc.interval_seconds,
+            description="the conductor to register online (did its drivers load?)",
+        )
     else:
         raise BootstrapError(f"Unknown health check type: {hc.type}")
+
+    try:
+        wait()
+    except BootstrapError as exc:
+        # A bare timeout says nothing about why; the service's own last words
+        # (e.g. a traceback) usually do.
+        try:
+            logs = backend.logs(spec.name, tail=40)
+        except Exception:
+            raise exc from None
+        raise BootstrapError(f"{exc}\nRecent logs from {spec.name}:\n{logs}") from exc

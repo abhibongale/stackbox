@@ -16,22 +16,28 @@ class RepoCache:
         return self.cache_dir / repo.replace("/", "_")
 
     def ensure_repos(self, branch: str = "master") -> None:
+        for repo in REQUIRED_REPOS:
+            self.ensure_repo(repo, branch=branch)
+
+    def ensure_repo(self, repo: str, branch: str = "master") -> Path:
+        """Clone a required repo if it isn't cached yet; return its path."""
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        for repo, url in REQUIRED_REPOS.items():
-            repo_path = self._repo_dir(repo)
-            if (repo_path / ".git").is_dir():
-                continue
-            try:
-                subprocess.run(
-                    ["git", "clone", "--depth", "1", "--branch", branch, url, str(repo_path)],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-            except subprocess.CalledProcessError as exc:
-                raise StackboxError(
-                    f"Failed to clone {repo}: {exc.stderr.strip()}"
-                ) from exc
+        repo_path = self._repo_dir(repo)
+        if (repo_path / ".git").is_dir():
+            return repo_path
+        try:
+            subprocess.run(
+                ["git", "clone", "--depth", "1", "--branch", branch,
+                 REQUIRED_REPOS[repo], str(repo_path)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise StackboxError(
+                f"Failed to clone {repo}: {exc.stderr.strip()}"
+            ) from exc
+        return repo_path
 
     def get_repo_path(self, repo: str) -> Path:
         repo_path = self._repo_dir(repo)

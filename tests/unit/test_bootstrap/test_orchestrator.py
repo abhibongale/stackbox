@@ -163,3 +163,46 @@ class TestBootstrapOrchestrator:
         )
         ironic = next(s for s in orch.specs if s.name == "stackbox-ironic-api")
         assert ironic.image == "custom-ironic:dev"
+
+
+class TestVncConsoleImagePhase:
+
+    @staticmethod
+    def _job(provider, local_repos=None):
+        return ResolvedJobConfig(
+            job_name="ironic-tempest-vnc-container",
+            devstack_services={"ir-novnc": True},
+            devstack_localrc={"IRONIC_VNC_CONTAINER_PROVIDER": provider},
+            local_repos=local_repos or {},
+        )
+
+    @patch("stackbox.bootstrap.orchestrator.ImageManager")
+    def test_builds_from_local_ironic_tree(self, mock_images, mock_backend, manifest, tmp_path):
+        job = self._job("container", {"ironic-conductor": "/src/ironic"})
+        orch = BootstrapOrchestrator(mock_backend, job, tmp_path, manifest)
+        orch._build_vnc_console_image()
+        mock_images.return_value.build_vnc_console.assert_called_once_with("/src/ironic")
+
+    @patch("stackbox.bootstrap.orchestrator.RepoCache")
+    @patch("stackbox.bootstrap.orchestrator.ImageManager")
+    def test_falls_back_to_cached_ironic(self, mock_images, mock_cache, mock_backend, manifest, tmp_path):
+        mock_cache.return_value.ensure_repo.return_value = Path("/cache/ironic")
+        orch = BootstrapOrchestrator(mock_backend, self._job("container"), tmp_path, manifest)
+        orch._build_vnc_console_image()
+        mock_cache.return_value.ensure_repo.assert_called_once_with("openstack/ironic", branch="master")
+        mock_images.return_value.build_vnc_console.assert_called_once_with("/cache/ironic")
+
+    @pytest.mark.parametrize("provider,expected", [("container", True), ("fake", False)])
+    def test_phase_only_when_engine_needed(self, mock_backend, manifest, tmp_path, provider, expected):
+        orch = BootstrapOrchestrator(mock_backend, self._job(provider), tmp_path, manifest)
+        ran = []
+        orch._build_vnc_console_image = lambda: ran.append(True)
+        # Stop right after the phase would run: start_services is next.
+        with patch("stackbox.bootstrap.orchestrator.start_services", side_effect=RuntimeError("stop")), \
+             patch.object(orch, "_create_volumes"), patch.object(orch, "_start_infrastructure"), \
+             patch.object(orch, "_run_dbsync_phase"), \
+             patch("stackbox.bootstrap.orchestrator.bootstrap_keystone"), \
+             patch("stackbox.bootstrap.orchestrator.register_services"):
+            with pytest.raises(RuntimeError, match="stop"):
+                orch.run()
+        assert bool(ran) is expected

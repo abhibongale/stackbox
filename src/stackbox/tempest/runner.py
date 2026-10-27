@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import shlex
 import subprocess
 import sys
@@ -13,6 +14,8 @@ from stackbox.exceptions import BootstrapError
 log = logging.getLogger(__name__)
 
 CONTAINER = "stackbox-tempest"
+# stestr's "Totals" block, e.g. " - Passed: 0" / " - Skipped: 1".
+_TOTALS_LINE = re.compile(r"^ - (Passed|Skipped|Failed): (\d+)\s*$")
 WORKSPACE = "/opt/tempest/workspace"
 
 
@@ -21,6 +24,7 @@ class TempestRunner:
     def __init__(self, backend: ContainerBackend, manifest: SessionManifest | None = None):
         self.backend = backend
         self.manifest = manifest
+        self.all_skipped = False
 
     def run(
         self,
@@ -75,10 +79,25 @@ class TempestRunner:
         cmd = self._build_run_cmd(spec)
         log.info("Running: %s", " ".join(cmd))
 
+        # Tee stdout so the stestr totals can be inspected after the run.
         proc = subprocess.Popen(
-            cmd, stdout=sys.stdout, stderr=sys.stderr,
+            cmd, stdout=subprocess.PIPE, stderr=sys.stderr, text=True,
         )
+        totals: dict[str, int] = {}
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            match = _TOTALS_LINE.match(line)
+            if match:
+                totals[match.group(1)] = int(match.group(2))
         exit_code = proc.wait()
+        # stestr exits 1 when nothing passed even if nothing failed; that is
+        # almost always a config gap (a feature the tests need isn't enabled).
+        self.all_skipped = (
+            totals.get("Passed") == 0
+            and totals.get("Failed") == 0
+            and totals.get("Skipped", 0) > 0
+        )
 
         if exit_code == 0:
             log.info("Tempest passed")

@@ -94,3 +94,27 @@ class TestImageManager:
         img_mgr.backend.build_image.side_effect = RuntimeError("build failed")
         with pytest.raises(ImageBuildError, match="Failed to build ironic-api"):
             img_mgr.build_local_repos({"ironic-api": "/src/ironic"})
+
+
+class TestBuildVncConsole:
+
+    def test_builds_from_ironic_tree(self, img_mgr, tmp_path):
+        ctx = tmp_path / "tools" / "vnc-container"
+        ctx.mkdir(parents=True)
+        (ctx / "Containerfile.ubuntu").write_text("FROM ubuntu:noble\n")
+
+        tag = img_mgr.build_vnc_console(str(tmp_path))
+
+        assert tag == "localhost/ironic-vnc-container"
+        img_mgr.backend.build_image.assert_called_once_with(
+            tag="localhost/ironic-vnc-container",
+            context=str(ctx),
+            containerfile=str(ctx / "Containerfile.ubuntu"),
+        )
+
+    def test_missing_containerfile_is_clear_error(self, img_mgr, tmp_path):
+        from stackbox.exceptions import ImageBuildError
+
+        with pytest.raises(ImageBuildError, match="predates graphical console"):
+            img_mgr.build_vnc_console(str(tmp_path))
+        img_mgr.backend.build_image.assert_not_called()
